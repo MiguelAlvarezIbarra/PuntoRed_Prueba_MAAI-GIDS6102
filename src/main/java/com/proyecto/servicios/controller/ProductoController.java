@@ -1,5 +1,7 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.dto.response.ApiResponse;
+import com.proyecto.servicios.dto.response.ResponseCode;
 import com.proyecto.servicios.entity.Producto;
 import com.proyecto.servicios.service.ProductoService;
 import lombok.extern.slf4j.Slf4j;
@@ -24,20 +26,19 @@ public class ProductoController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Producto>> getProductos() {
+    public ResponseEntity<ApiResponse<List<Producto>>> getProductos() {
         List<Producto> productos = productoService.obtenerTodosLosProductos();
-        return ResponseEntity.ok(productos);
+
+        if (productos.isEmpty()) {
+            return ResponseEntity.ok(ApiResponse.error(ResponseCode.ERROR_SIN_DATOS));
+        }
+
+        return ResponseEntity.ok(ApiResponse.ok(productos));
     }
 
     @PostMapping("/sync")
-    public ResponseEntity<String> forceSyncProductos() {
-        try {
-            int total = productoService.sincronizarProductos();
-            return ResponseEntity.ok("Sincronización exitosa. Productos procesados: " + total);
-        } catch (Exception e) {
-            log.error("Error forzando sincronización de productos: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Falló la sincronización: " + e.getMessage());
-        }
+    public ResponseEntity<ApiResponse<Integer>> forceSyncProductos() {
+        int total = productoService.sincronizarProductos();
+        return ResponseEntity.ok(ApiResponse.ok(total));
     }
 }
