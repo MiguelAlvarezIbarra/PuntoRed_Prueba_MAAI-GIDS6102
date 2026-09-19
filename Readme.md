@@ -4,7 +4,7 @@ Servicio backend en Spring Boot que integra con **GestoPago** para la sincroniza
 
 ## Tecnologías
 
-- Java 17
+- Java 21
 - Spring Boot 3
 - Spring Data JPA / Hibernate
 - PostgreSQL + HikariCP (pool `PagoServ-Pool`)
