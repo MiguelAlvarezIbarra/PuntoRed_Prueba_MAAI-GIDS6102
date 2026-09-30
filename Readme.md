@@ -1,6 +1,6 @@
 # DWP_Alvarez_Ibarra_GIDS6102_PagoServicio
 
-Servicio backend en Spring Boot que integra con **GestoPago** para la sincronización de productos, y que además expone un módulo de gestión de **Personas** (CRUD). Proyecto académico (GIDS6102) de Miguel Álvarez Ibarra.
+Servicio backend en Spring Boot que integra con **GestoPago** para la sincronización de productos, expone un módulo de gestión de **Personas** (CRUD) y un módulo de **Onboarding de Clientes** (registro de clientes personas físicas, cuentas bancarias y seguridad con JWT). Proyecto académico (GIDS6102) de Miguel Álvarez Ibarra.
 
 ## Tecnologías
 
@@ -13,6 +13,8 @@ Servicio backend en Spring Boot que integra con **GestoPago** para la sincroniza
 - Lombok
 - org.json (conversión XML → JSON de la respuesta de GestoPago)
 - springdoc-openapi / Swagger UI
+- **JJWT** (`jjwt-api` / `jjwt-impl` / `jjwt-jackson`) — generación y validación de JWT propio
+- **Spring Security Crypto** (`spring-security-crypto`) — hash de contraseñas con BCrypt
 
 ## Requisitos previos
 
@@ -44,6 +46,17 @@ spring.data.redis.port=6379
 spring.data.redis.timeout=1500ms
 spring.data.redis.connect-timeout=1500ms
 app.cache.productos.ttl-seconds=3600
+
+# Onboarding de Clientes - Seguridad (obligatorias, sin default a proposito)
+# Generar cada una con: openssl rand -base64 32
+seguridad.aes.llave=${AES_KEY}
+seguridad.jwt.llave=${JWT_KEY}
+seguridad.jwt.expiracion-minutos=15
+seguridad.sesion.inactividad-minutos=3
+seguridad.sesion.revision-ms=30000
+
+# Onboarding de Clientes - Reglas de negocio
+cuenta.saldo-inicial=0.00
 ```
 
 ## Cómo correr el proyecto
@@ -135,6 +148,46 @@ Las excepciones del módulo de GestoPago (autenticación, timeout, comunicación
 | PUT | `/personasActualiza` | Actualiza una persona (solo los campos enviados; los omitidos no se tocan) |
 | PUT | `/personasElimina` | Elimina una persona por id |
 
+### Onboarding de Clientes (Personas Físicas)
+
+Módulo para registrar clientes personas físicas, crearles automáticamente una cuenta bancaria, y controlar el acceso con login/JWT y roles. Sigue la misma arquitectura por capas del resto del proyecto (`controller` → `service`/`service.Impl` → `repositorys` → `entity`), con sus propios `model` (DTOs) y `exception`.
+
+#### Entidades y relaciones
+
+- **`Cliente`** — datos personales, contacto e información laboral. Baja lógica vía `activo`.
+- **`Domicilio`** — 1:1 con `Cliente`.
+- **`Cuenta`** — 1:N con `Cliente`; número de cuenta único generado automáticamente, saldo inicial definido por el sistema (`cuenta.saldo-inicial`), estatus `ACTIVA`/`INACTIVA`.
+- **`Usuario`** (seguridad) — 1:1 con `Cliente`: correo cifrado (AES-256-GCM) + hash del correo (SHA-256) para poder buscarlo sin descifrar, password con BCrypt, JWT cifrado, bandera de sesión activa, marca de última actividad, score biométrico opcional (`datos_biometricos`, pensado para reconocimiento facial con MediaPipe, aún no integrado) y **rol** (`1` administrador, `2` usuario normal).
+
+#### Endpoints
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| POST | `/clientes` | Registra cliente + domicilio + cuenta + usuario (rol siempre `2`) |
+| GET | `/clientes` | Lista todos los clientes |
+| GET | `/clientes/{id}` | Consulta por id |
+| PUT | `/clientes/{id}` | Actualiza (reemplazo completo; CURP, RFC y número de cuenta nunca se modifican) |
+| DELETE | `/clientes/{id}` | Baja lógica (`activo=false` y sus cuentas pasan a `INACTIVA`) |
+| GET | `/clientes/curp/{curp}` \| `/rfc/{rfc}` \| `/correo?correo=` \| `/cuenta/{numeroCuenta}` | Búsquedas puntuales |
+| GET | `/clientes/activos` | Solo clientes activos |
+| GET | `/clientes/rango-fechas?desde=&hasta=` | Clientes registrados en un rango de fechas |
+| GET | `/cuentas/{numeroCuenta}` | Consulta una cuenta |
+| GET | `/cuentas/activas` | Cuentas activas |
+| GET | `/cuentas/{numeroCuenta}/saldo` | Consulta el saldo |
+| POST | `/auth/login` | Login: valida correo/password y regresa un JWT + rol |
+| POST | `/auth/logout` | Cierra la sesión (header `Authorization: Bearer <jwt>`) |
+| POST | `/admin/clientes` | Solo administradores (`Authorization: Bearer <jwt de rol=1>`): crea un cliente/usuario eligiendo el rol |
+
+#### Seguridad y sesión
+
+- **Correo**: cifrado con AES-256-GCM (IV aleatorio) para guardarlo, y con un hash SHA-256 aparte para poder buscarlo sin descifrar todos los registros.
+- **Password**: BCrypt, irreversible.
+- **JWT**: generado con `jjwt`, lleva el `clienteId` y el `rol` como claims, se guarda cifrado en `usuarios.jwt_cifrado` y se entrega en claro solo en la respuesta del login.
+- **Sesión por inactividad**: cada request con un JWT válido refresca `ultima_actividad`; un `@Scheduled` (`SesionExpiracionScheduler`) revisa cada 30s y cierra (`sesion_activa=false`) cualquier sesión con más de 3 minutos sin actividad.
+- **Roles**: `1` administrador, `2` usuario normal. El registro público (`POST /clientes`) siempre fuerza rol `2`. Solo un administrador autenticado puede crear otro usuario con cualquier rol, vía `POST /admin/clientes`. El primer administrador se promueve a mano una sola vez (`UPDATE usuarios SET rol = 1 WHERE cliente_id = ...`), documentado en `docs/DOCUMENTO_TECNICO.md`.
+
+Más detalle (diagrama entidad-relación, decisiones de tipos de dato, ejemplos de request y casos de prueba) en [`docs/DOCUMENTO_TECNICO.md`](docs/DOCUMENTO_TECNICO.md).
+
 ## Estado actual / pendientes
 
 - [x] Bug de sincronización de productos (reportaba éxito sin guardar) — resuelto.
@@ -142,8 +195,12 @@ Las excepciones del módulo de GestoPago (autenticación, timeout, comunicación
 - [x] Respuestas estandarizadas (código/mensaje) y manejo centralizado de excepciones.
 - [x] Cache de productos en Redis con fallback automático a PostgreSQL.
 - [x] Credenciales reales de distribuidor GestoPago agregadas (`id-distribuidor`, `codigo-dispositivo`, `password`) — actualmente son placeholders.
+- [x] Módulo de Onboarding de Clientes: registro, cuentas, validaciones y baja lógica.
+- [x] Seguridad de Onboarding: JWT propio, cifrado AES-256-GCM, BCrypt, roles (admin/usuario normal) y expiración de sesión por inactividad.
 - [ ] Implementar el flujo de pagos de GestoPago (aún no existe).
+- [ ] Proteger con JWT el resto de los endpoints de Onboarding (por ahora solo `POST /admin/clientes` lo exige).
+- [ ] Integrar el score biométrico real (MediaPipe) — la columna ya existe, en `NULL`.
 
 ## Base de datos
 
-Tablas actuales: `flyway_schema_history`, `gestopago_tokens`, `personas`, `productos`.
+Tablas actuales: `flyway_schema_history`, `gestopago_tokens`, `personas`, `productos`, `clientes`, `domicilios`, `cuentas`, `usuarios`.
