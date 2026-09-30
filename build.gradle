@@ -50,6 +50,8 @@ dependencies {
     //jjwt unificado más abajo
     implementation 'com.auth0:jwks-rsa:0.22.1'
     implementation 'com.auth0:java-jwt:4.4.0'
+    // NUEVO (proyecto Onboarding de Clientes): solo BCrypt para hashear passwords, sin activar Spring Security completo
+    implementation 'org.springframework.security:spring-security-crypto'
     //Utilerias Apache Commons
     implementation 'org.apache.commons:commons-lang3:3.12.0'
     implementation 'commons-fileupload:commons-fileupload:1.5'
