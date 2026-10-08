@@ -30,7 +30,7 @@ public class AdminController {
 
     @PostMapping(value = "/clientes", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClienteResponse> crearComoAdmin(
-            @RequestHeader("Authorization") String authorization,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @Valid @RequestBody AdminClienteRequest request) {
 
         Integer adminId = adminGuard.exigirAdmin(authorization);

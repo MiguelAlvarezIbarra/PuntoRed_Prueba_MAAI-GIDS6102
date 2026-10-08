@@ -18,23 +18,24 @@ public class ClienteRequest {
     private Integer id;
 
     // ---- Datos personales ----
-    @NotBlank(message = "El nombre es obligatorio")
-    @Pattern(regexp = "^[\\p{L} ]{2,50}$", message = "El nombre solo debe contener letras y espacios (2 a 50 caracteres)")
+    @NotBlank(message = "Código 1: El nombre es obligatorio")
+    @Pattern(regexp = "^[\\p{L} ]{3,50}$", message = "Código 4: El nombre solo debe contener letras y espacios (minimo 3, maximo 50 caracteres)")
     private String nombre;
 
-    @Pattern(regexp = "^[\\p{L} ]{0,50}$", message = "El segundo nombre solo debe contener letras y espacios")
+    @Pattern(regexp = "^[\\p{L} ]{0,50}$", message = "Código 4: El segundo nombre solo debe contener letras y espacios")
     private String segundoNombre;
 
-    @NotBlank(message = "El apellido paterno es obligatorio")
-    @Pattern(regexp = "^[\\p{L} ]{2,50}$", message = "El apellido paterno solo debe contener letras y espacios (2 a 50 caracteres)")
+    @NotBlank(message = "Código 1: El apellido paterno es obligatorio")
+    @Pattern(regexp = "^[\\p{L} ]{3,50}$", message = "Código 4: El apellido paterno solo debe contener letras y espacios (minimo 3, maximo 50 caracteres)")
     private String apellidoPaterno;
 
-    @NotBlank(message = "El apellido materno es obligatorio")
-    @Pattern(regexp = "^[\\p{L} ]{2,50}$", message = "El apellido materno solo debe contener letras y espacios (2 a 50 caracteres)")
+    @NotBlank(message = "Código 1: El apellido materno es obligatorio")
+    @Pattern(regexp = "^[\\p{L} ]{3,50}$", message = "Código 4: El apellido materno solo debe contener letras y espacios (minimo 3, maximo 50 caracteres)")
     private String apellidoMaterno;
 
-    @NotNull(message = "La fecha de nacimiento es obligatoria")
-    @PastOrPresent(message = "La fecha de nacimiento no puede ser una fecha futura")
+    @NotNull(message = "Código 1: La fecha de nacimiento es obligatoria")
+    @PastOrPresent(message = "Código 5: La fecha de nacimiento no puede ser una fecha futura")
+    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate fechaNacimiento;
 
     @NotBlank(message = "La CURP es obligatoria")
@@ -52,12 +53,17 @@ public class ClienteRequest {
     private String rfc;
 
     @NotBlank(message = "El sexo es obligatorio")
+    @Pattern(regexp = "^[HM]$", message = "El sexo debe ser 'H' o 'M'")
     private String sexo;
 
     @NotBlank(message = "La nacionalidad es obligatoria")
     private String nacionalidad;
 
     @NotBlank(message = "El estado civil es obligatorio")
+    @Pattern(
+            regexp = "^(Soltero|Casado|Divorciado|Viudo|Union Libre)$",
+            message = "El estado civil debe ser uno de: Soltero, Casado, Divorciado, Viudo, Union Libre"
+    )
     private String estadoCivil;
 
     // ---- Datos de contacto ----
@@ -80,9 +86,10 @@ public class ClienteRequest {
     @NotBlank(message = "La empresa es obligatoria")
     private String empresa;
 
-    @NotNull(message = "El ingreso mensual es obligatorio")
-    @DecimalMin(value = "0.01", message = "El ingreso mensual debe ser mayor a cero")
-    private BigDecimal ingresoMensual;
+    @NotNull(message = "Código 1: El ingreso mensual es obligatorio")
+    @DecimalMin(value = "0.01", message = "Código 2: El ingreso mensual debe ser mayor a cero")
+    @Digits(integer = 10, fraction = 2, message = "Código 6: Formato de dinero inválido (máximo 2 decimales)")
+    private java.math.BigDecimal ingresoMensual;
 
     // ---- Domicilio ----
     @NotNull(message = "El domicilio es obligatorio")
