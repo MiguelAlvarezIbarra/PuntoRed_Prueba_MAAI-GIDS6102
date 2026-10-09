@@ -84,6 +84,7 @@ public class ClienteServiceImpl implements ClienteService {
         validarMayorEdad(request.getFechaNacimiento());
         validarPasswordPresente(request.getPassword());
         validarUnicidad(request);
+        validarCatalogos(request);
 
         Cliente cliente = new Cliente();
         copiarDatosBasicos(cliente, request);
@@ -105,6 +106,7 @@ public class ClienteServiceImpl implements ClienteService {
     @Transactional
     public ClienteResponse actualizaCliente(Integer id, ClienteRequest request) {
         log.info("Inicio actualizaCliente - id={}", id);
+        validarCatalogos(request);
         Cliente cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("El cliente con id " + id + " no existe"));
 
@@ -234,6 +236,17 @@ public class ClienteServiceImpl implements ClienteService {
     // ---------------------------------------------------------------
     // Helpers privados
     // ---------------------------------------------------------------
+
+    private void validarCatalogos(ClienteRequest request) {
+        if (clienteRepository.countNacionalidad(request.getNacionalidad()) == 0) {
+            throw new ValidacionException("Código 7: La nacionalidad proporcionada no es válida o no existe en el catálogo");
+        }
+        if (request.getDomicilio() != null && request.getDomicilio().getPais() != null) {
+            if (clienteRepository.countPais(request.getDomicilio().getPais()) == 0) {
+                throw new ValidacionException("Código 7: El país proporcionado no es válido o no existe en el catálogo");
+            }
+        }
+    }
 
     private void validarMayorEdad(LocalDate fechaNacimiento) {
         int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();

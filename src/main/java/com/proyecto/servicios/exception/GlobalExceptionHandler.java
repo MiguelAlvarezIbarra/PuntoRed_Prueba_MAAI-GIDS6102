@@ -33,7 +33,19 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining("; "));
         log.warn("Error de validacion: {}", mensaje);
-        return construir(1, "Error de validacion: " + mensaje, HttpStatus.BAD_REQUEST);
+        
+        int codigo = 1;
+        if (mensaje.contains("Código ")) {
+            try {
+                String extract = mensaje.substring(mensaje.indexOf("Código ") + 7);
+                extract = extract.substring(0, extract.indexOf(":"));
+                codigo = Integer.parseInt(extract.trim());
+            } catch (Exception e) {
+                // fallback to 1 if parsing fails
+            }
+        }
+        
+        return construir(codigo, "Error de validacion: " + mensaje, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
@@ -102,8 +114,27 @@ public class GlobalExceptionHandler {
         return construir(8, ex.getMessage(), HttpStatus.UNAUTHORIZED);
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<GenericResponse> handleNotReadable(HttpMessageNotReadableException ex) {
+        Throwable cause = ex.getCause();
+        if (cause instanceof com.fasterxml.jackson.databind.exc.MismatchedInputException) {
+            com.fasterxml.jackson.databind.exc.MismatchedInputException mismatchEx = (com.fasterxml.jackson.databind.exc.MismatchedInputException) cause;
+            if (mismatchEx.getTargetType() != null && mismatchEx.getTargetType().equals(java.time.LocalDate.class)) {
+                return construir(5, "Formato de Fecha Incorrecta", HttpStatus.BAD_REQUEST);
+            }
+            if (mismatchEx.getTargetType() != null && java.lang.Number.class.isAssignableFrom(mismatchEx.getTargetType())) {
+                String campo = mismatchEx.getPath().isEmpty() ? "desconocido" : mismatchEx.getPath().get(0).getFieldName();
+                return construir(6, "Formato numérico inválido. No se permite enviar números como texto (con comillas) ni formatos incorrectos en el campo: " + campo, HttpStatus.BAD_REQUEST);
+            }
+            if (!mismatchEx.getPath().isEmpty()) {
+                return construir(1, "Formato de dato incorrecto en el campo: " + mismatchEx.getPath().get(0).getFieldName(), HttpStatus.BAD_REQUEST);
+            }
+        }
+        // Fallback para otros errores de formato, como un JSON roto
+        return construir(1, "Error de validacion: la peticion esta mal formada o le faltan datos", HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler({
-            HttpMessageNotReadableException.class,
             MissingRequestHeaderException.class,
             MissingServletRequestParameterException.class,
             MethodArgumentTypeMismatchException.class

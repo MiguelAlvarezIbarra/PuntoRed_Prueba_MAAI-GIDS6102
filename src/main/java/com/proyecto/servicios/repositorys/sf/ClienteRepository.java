@@ -26,4 +26,10 @@ public interface ClienteRepository extends JpaRepository<Cliente, Integer> {
     List<Cliente> findByActivoTrue();
 
     List<Cliente> findByFechaRegistroBetween(LocalDateTime desde, LocalDateTime hasta);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT COUNT(1) FROM cat_paises WHERE nombre = :pais", nativeQuery = true)
+    int countPais(@org.springframework.data.repository.query.Param("pais") String pais);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT COUNT(1) FROM cat_nacionalidades WHERE nombre = :nacionalidad", nativeQuery = true)
+    int countNacionalidad(@org.springframework.data.repository.query.Param("nacionalidad") String nacionalidad);
 }
