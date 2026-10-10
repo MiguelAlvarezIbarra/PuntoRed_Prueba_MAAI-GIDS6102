@@ -28,7 +28,7 @@ public class CryptoUtil {
     private final SecureRandom random = new SecureRandom();
 
     public CryptoUtil(@Value("${seguridad.aes.llave}") String llaveBase64) {
-        byte[] llaveBytes = Base64.getDecoder().decode(llaveBase64);
+        byte[] llaveBytes = Base64.getDecoder().decode(llaveBase64.trim());
         this.llave = new SecretKeySpec(llaveBytes, "AES");
     }
 
