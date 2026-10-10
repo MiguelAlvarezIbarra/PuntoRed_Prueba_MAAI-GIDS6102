@@ -27,7 +27,7 @@ public class JwtUtil {
             @Value("${seguridad.jwt.llave}") String llaveBase64,
             @Value("${seguridad.jwt.expiracion-minutos:15}") long expiracionMinutos
     ) {
-        this.llave = Keys.hmacShaKeyFor(Base64.getDecoder().decode(llaveBase64));
+        this.llave = Keys.hmacShaKeyFor(Base64.getDecoder().decode(llaveBase64.trim()));
         this.expiracionMinutos = expiracionMinutos;
     }
 
