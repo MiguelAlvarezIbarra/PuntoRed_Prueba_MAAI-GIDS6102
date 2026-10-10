@@ -138,16 +138,6 @@ Los endpoints devuelven un formato consistente con código y mensaje (`ApiRespon
 
 Las excepciones del módulo de GestoPago (autenticación, timeout, comunicación, respuesta inesperada) se traducen automáticamente a este formato mediante un `@RestControllerAdvice` (`GlobalExceptionHandler`), centralizando el manejo de errores en un solo lugar.
 
-### Personas (CRUD)
-
-| Método | Endpoint | Descripción |
-|---|---|---|
-| POST | `/personas` | Crea una persona (el id se autogenera) |
-| GET | `/personas` | Lista todas las personas |
-| GET | `/personas/{codigo}` | Obtiene una persona por id |
-| PUT | `/personasActualiza` | Actualiza una persona (solo los campos enviados; los omitidos no se tocan) |
-| PUT | `/personasElimina` | Elimina una persona por id |
-
 ### Onboarding de Clientes (Personas Físicas)
 
 Módulo para registrar clientes personas físicas, crearles automáticamente una cuenta bancaria, y controlar el acceso con login/JWT y roles. Sigue la misma arquitectura por capas del resto del proyecto (`controller` → `service`/`service.Impl` → `repositorys` → `entity`), con sus propios `model` (DTOs) y `exception`.
@@ -165,10 +155,12 @@ Módulo para registrar clientes personas físicas, crearles automáticamente una
 |---|---|---|
 | POST | `/clientes` | Registra cliente + domicilio + cuenta + usuario (rol siempre `2`) |
 | GET | `/clientes` | Lista todos los clientes |
-| GET | `/clientes/{id}` | Consulta por id |
-| PUT | `/clientes/{id}` | Actualiza (reemplazo completo; CURP, RFC y número de cuenta nunca se modifican) |
-| DELETE | `/clientes/{id}` | Baja lógica (`activo=false` y sus cuentas pasan a `INACTIVA`) |
-| GET | `/clientes/curp/{curp}` \| `/rfc/{rfc}` \| `/correo?correo=` \| `/cuenta/{numeroCuenta}` | Búsquedas puntuales |
+| GET | `/clientes/{rfc}` | Consulta por RFC |
+| PUT | `/clientes/{rfc}` | Actualiza (reemplazo completo; CURP, RFC y número de cuenta nunca se modifican) |
+| DELETE | `/clientes/{rfc}` | Baja lógica (`activo=false` y sus cuentas pasan a `INACTIVA`) |
+| PATCH | `/clientes/{rfc}/reactivar` | Reactiva al cliente y sus cuentas |
+| POST | `/clientes/search` | Búsqueda dinámica por coincidencia (JSON con `nombre`, `rfc`, `curp`, `correo`, `numeroCuenta`; los campos enviados se combinan con AND) |
+| GET | `/clientes/curp/{curp}` \| `/correo?correo=` \| `/cuenta/{numeroCuenta}` | Búsquedas puntuales |
 | GET | `/clientes/activos` | Solo clientes activos |
 | GET | `/clientes/rango-fechas?desde=&hasta=` | Clientes registrados en un rango de fechas |
 | GET | `/cuentas/{numeroCuenta}` | Consulta una cuenta |
@@ -203,4 +195,4 @@ Más detalle (diagrama entidad-relación, decisiones de tipos de dato, ejemplos 
 
 ## Base de datos
 
-Tablas actuales: `flyway_schema_history`, `gestopago_tokens`, `personas`, `productos`, `clientes`, `domicilios`, `cuentas`, `usuarios`.
+Tablas actuales: `flyway_schema_history`, `gestopago_tokens`, `productos`, `clientes`, `domicilios`, `cuentas`, `usuarios`.
