@@ -34,20 +34,25 @@ public class ClienteController {
         return new ResponseEntity<>(clienteService.obtenerClientes(), HttpStatus.OK);
     }
 
-    @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> obtenerClientePorId(@PathVariable Integer id) {
-        return new ResponseEntity<>(clienteService.obtenerClientePorId(id), HttpStatus.OK);
+    @GetMapping(value = "/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClienteResponse> obtenerClientePorRfc(@PathVariable String rfc) {
+        return new ResponseEntity<>(clienteService.obtenerClientePorRfc(rfc), HttpStatus.OK);
     }
 
-    @PutMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> actualizarCliente(@PathVariable Integer id,
+    @PutMapping(value = "/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClienteResponse> actualizarCliente(@PathVariable String rfc,
                                                              @Valid @RequestBody ClienteRequest request) {
-        return new ResponseEntity<>(clienteService.actualizaCliente(id, request), HttpStatus.OK);
+        return new ResponseEntity<>(clienteService.actualizaCliente(rfc, request), HttpStatus.OK);
     }
 
-    @DeleteMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<GenericResponse> eliminarCliente(@PathVariable Integer id) {
-        return new ResponseEntity<>(clienteService.eliminaCliente(id), HttpStatus.OK);
+    @DeleteMapping(value = "/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> eliminarCliente(@PathVariable String rfc) {
+        return new ResponseEntity<>(clienteService.eliminaCliente(rfc), HttpStatus.OK);
+    }
+
+    @PatchMapping(value = "/{rfc}/reactivar", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> reactivarCliente(@PathVariable String rfc) {
+        return new ResponseEntity<>(clienteService.reactivarCliente(rfc), HttpStatus.OK);
     }
 
     // ---------- Consultas solicitadas ----------
@@ -57,10 +62,7 @@ public class ClienteController {
         return new ResponseEntity<>(clienteService.obtenerClientePorCurp(curp), HttpStatus.OK);
     }
 
-    @GetMapping(value = "/rfc/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> obtenerPorRfc(@PathVariable String rfc) {
-        return new ResponseEntity<>(clienteService.obtenerClientePorRfc(rfc), HttpStatus.OK);
-    }
+
 
     @GetMapping(value = "/correo", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClienteResponse> obtenerPorCorreo(@RequestParam String correo) {
@@ -82,5 +84,16 @@ public class ClienteController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta) {
         return new ResponseEntity<>(clienteService.obtenerClientesPorRangoFechas(desde, hasta), HttpStatus.OK);
+    }
+
+    @PostMapping(value = "/search", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ListaClientesResponse> buscarDinamico(@RequestBody com.proyecto.servicios.model.ClienteSearchRequest request) {
+        return new ResponseEntity<>(clienteService.buscarDinamico(
+                request.getNombre(), 
+                request.getRfc(), 
+                request.getCurp(), 
+                request.getNumeroCuenta(), 
+                request.getCorreo()
+        ), HttpStatus.OK);
     }
 }

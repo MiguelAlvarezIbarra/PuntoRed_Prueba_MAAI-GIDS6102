@@ -126,6 +126,10 @@ public class GlobalExceptionHandler {
                 String campo = mismatchEx.getPath().isEmpty() ? "desconocido" : mismatchEx.getPath().get(0).getFieldName();
                 return construir(6, "Formato numérico inválido. No se permite enviar números como texto (con comillas) ni formatos incorrectos en el campo: " + campo, HttpStatus.BAD_REQUEST);
             }
+            if (mismatchEx.getTargetType() != null && mismatchEx.getTargetType().equals(String.class)) {
+                String campo = mismatchEx.getPath().isEmpty() ? "desconocido" : mismatchEx.getPath().get(0).getFieldName();
+                return construir(9, "Bad request - El campo '" + campo + "' debe ir entre comillas (String), no como numero", HttpStatus.BAD_REQUEST);
+            }
             if (!mismatchEx.getPath().isEmpty()) {
                 return construir(1, "Formato de dato incorrecto en el campo: " + mismatchEx.getPath().get(0).getFieldName(), HttpStatus.BAD_REQUEST);
             }

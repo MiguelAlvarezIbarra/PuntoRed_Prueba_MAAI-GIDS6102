@@ -12,7 +12,6 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor
 public class ClienteData {
-    private Integer id;
     private String nombre;
     private String segundoNombre;
     private String apellidoPaterno;

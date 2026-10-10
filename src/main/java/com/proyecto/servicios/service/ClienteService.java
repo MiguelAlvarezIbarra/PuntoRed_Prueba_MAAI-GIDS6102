@@ -14,13 +14,13 @@ public interface ClienteService {
     // Usado solo por el endpoint de administrador: permite elegir el rol (1 admin, 2 normal)
     ClienteResponse creaClienteConRol(ClienteRequest request, Integer rol);
 
-    ClienteResponse actualizaCliente(Integer id, ClienteRequest request);
+    ClienteResponse actualizaCliente(String rfc, ClienteRequest request);
 
-    GenericResponse eliminaCliente(Integer id);
+    GenericResponse eliminaCliente(String rfc);
+
+    GenericResponse reactivarCliente(String rfc);
 
     ListaClientesResponse obtenerClientes();
-
-    ClienteResponse obtenerClientePorId(Integer id);
 
     ClienteResponse obtenerClientePorCurp(String curp);
 
@@ -33,4 +33,6 @@ public interface ClienteService {
     ListaClientesResponse obtenerClientesActivos();
 
     ListaClientesResponse obtenerClientesPorRangoFechas(LocalDate desde, LocalDate hasta);
+
+    ListaClientesResponse buscarDinamico(String nombre, String rfc, String curp, String cuenta, String correo);
 }
