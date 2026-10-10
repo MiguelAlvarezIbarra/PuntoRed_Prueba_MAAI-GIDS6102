@@ -41,3 +41,10 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Archivos de entorno / secretos — NUNCA subir al repo ###
+.env
+.env.*
+*.env
+application-local.properties
+application-secret.properties

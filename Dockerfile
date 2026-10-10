@@ -17,6 +17,8 @@ COPY --from=build /app/app.jar app.jar
 # El plan gratis de Render tiene 512 MB de RAM: se limita la memoria de la JVM.
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
 
-# Render asigna el puerto en la variable PORT (por defecto 10000).
-EXPOSE 10000
+# Render inyecta el puerto via $PORT. Spring lo lee con server.port=${PORT:8081}.
+# No se fija un EXPOSE estatico para evitar discrepancias.
+EXPOSE ${PORT:-8081}
+
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
