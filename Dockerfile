@@ -1,7 +1,6 @@
 # ---------- Etapa 1: compilar el .jar ----------
 FROM eclipse-temurin:17-jdk AS build
 WORKDIR /app
-COPY ../../Users/mijel/Downloads .
 
 # sed: quita saltos de linea de Windows (CRLF) que rompen gradlew dentro de Linux
 RUN sed -i 's/\r$//' gradlew \
