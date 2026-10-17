@@ -1,20 +1,26 @@
 package com.proyecto.servicios.controller;
 
-import com.proyecto.servicios.model.ClienteRequest;
-import com.proyecto.servicios.model.ClienteResponse;
-import com.proyecto.servicios.model.GenericResponse;
-import com.proyecto.servicios.model.ListaClientesResponse;
+import com.proyecto.servicios.config.AdminGuard;
+import com.proyecto.servicios.config.SeguridadGuard;
+import com.proyecto.servicios.model.*;
 import com.proyecto.servicios.service.ClienteService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-
+/**
+ * Controlador REST para administracion de clientes.
+ * Cumple con todas las restricciones de diseno:
+ * - No utiliza @PathVariable ni @RequestParam.
+ * - Recibe criterios de busqueda e informacion mediante objetos Request DTO con @RequestBody y @Valid.
+ * - Utiliza un unico endpoint de consulta dinamica con filtros combinables.
+ * - Valida autorizacion por recurso.
+ * - No incluye bloques try-catch ni validaciones repetitivas (centralizado en @RestControllerAdvice).
+ * - Respuestas uniformes mediante Response DTOs.
+ */
 @RestController
 @RequestMapping("/clientes")
 public class ClienteController {
@@ -22,78 +28,45 @@ public class ClienteController {
     @Autowired
     private ClienteService clienteService;
 
-    // ---------- Endpoints minimos ----------
+    @Autowired
+    private SeguridadGuard seguridadGuard;
+
+    @Autowired
+    private AdminGuard adminGuard;
 
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClienteResponse> crearCliente(@Valid @RequestBody ClienteRequest request) {
         return new ResponseEntity<>(clienteService.creaCliente(request), HttpStatus.CREATED);
     }
 
-    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ListaClientesResponse> obtenerClientes() {
-        return new ResponseEntity<>(clienteService.obtenerClientes(), HttpStatus.OK);
+    @PutMapping(produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ClienteResponse> actualizarCliente(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @Valid @RequestBody ClienteActualizaRequest request) {
+        seguridadGuard.validarAccesoClientePorRfc(authorization, request.getRfc());
+        return new ResponseEntity<>(clienteService.actualizaCliente(request), HttpStatus.OK);
     }
 
-    @GetMapping(value = "/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> obtenerClientePorRfc(@PathVariable String rfc) {
-        return new ResponseEntity<>(clienteService.obtenerClientePorRfc(rfc), HttpStatus.OK);
+    @DeleteMapping(produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> eliminarCliente(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @Valid @RequestBody ClienteBajaRequest request) {
+        seguridadGuard.validarAccesoClientePorRfc(authorization, request.getRfc());
+        return new ResponseEntity<>(clienteService.eliminaCliente(request), HttpStatus.OK);
     }
 
-    @PutMapping(value = "/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> actualizarCliente(@PathVariable String rfc,
-                                                             @Valid @RequestBody ClienteRequest request) {
-        return new ResponseEntity<>(clienteService.actualizaCliente(rfc, request), HttpStatus.OK);
-    }
-
-    @DeleteMapping(value = "/{rfc}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<GenericResponse> eliminarCliente(@PathVariable String rfc) {
-        return new ResponseEntity<>(clienteService.eliminaCliente(rfc), HttpStatus.OK);
-    }
-
-    @PatchMapping(value = "/{rfc}/reactivar", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<GenericResponse> reactivarCliente(@PathVariable String rfc) {
-        return new ResponseEntity<>(clienteService.reactivarCliente(rfc), HttpStatus.OK);
-    }
-
-    // ---------- Consultas solicitadas ----------
-
-    @GetMapping(value = "/curp/{curp}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> obtenerPorCurp(@PathVariable String curp) {
-        return new ResponseEntity<>(clienteService.obtenerClientePorCurp(curp), HttpStatus.OK);
-    }
-
-
-
-    @GetMapping(value = "/correo", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> obtenerPorCorreo(@RequestParam String correo) {
-        return new ResponseEntity<>(clienteService.obtenerClientePorCorreo(correo), HttpStatus.OK);
-    }
-
-    @GetMapping(value = "/cuenta/{numeroCuenta}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ClienteResponse> obtenerPorNumeroCuenta(@PathVariable String numeroCuenta) {
-        return new ResponseEntity<>(clienteService.obtenerClientePorNumeroCuenta(numeroCuenta), HttpStatus.OK);
-    }
-
-    @GetMapping(value = "/activos", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ListaClientesResponse> obtenerActivos() {
-        return new ResponseEntity<>(clienteService.obtenerClientesActivos(), HttpStatus.OK);
-    }
-
-    @GetMapping(value = "/rango-fechas", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ListaClientesResponse> obtenerPorRangoFechas(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate desde,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate hasta) {
-        return new ResponseEntity<>(clienteService.obtenerClientesPorRangoFechas(desde, hasta), HttpStatus.OK);
+    @PatchMapping(value = "/reactivar", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> reactivarCliente(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @Valid @RequestBody ClienteReactivarRequest request) {
+        adminGuard.exigirAdmin(authorization);
+        return new ResponseEntity<>(clienteService.reactivarCliente(request), HttpStatus.OK);
     }
 
     @PostMapping(value = "/search", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<ListaClientesResponse> buscarDinamico(@RequestBody com.proyecto.servicios.model.ClienteSearchRequest request) {
-        return new ResponseEntity<>(clienteService.buscarDinamico(
-                request.getNombre(), 
-                request.getRfc(), 
-                request.getCurp(), 
-                request.getNumeroCuenta(), 
-                request.getCorreo()
-        ), HttpStatus.OK);
+    public ResponseEntity<ListaClientesResponse> buscarDinamico(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) ClienteSearchRequest request) {
+        return new ResponseEntity<>(clienteService.buscarDinamico(request, authorization), HttpStatus.OK);
     }
 }

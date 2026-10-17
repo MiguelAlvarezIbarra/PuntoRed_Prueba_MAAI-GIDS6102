@@ -2,6 +2,7 @@ package com.proyecto.servicios.repositorys.sf;
 
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Cuenta;
+import com.proyecto.servicios.model.ClienteSearchRequest;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
@@ -9,47 +10,73 @@ import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Busqueda dinamica de clientes. Solo se agrega un filtro por cada campo que
- * venga con valor; todos se combinan con AND y buscan por coincidencia parcial
- * (LIKE '%valor%') sin distinguir mayusculas/minusculas.
+ * Busqueda dinamica de clientes mediante Criteria API de JPA.
+ * - Solo se agrega un filtro por cada campo que venga con valor.
+ * - Todos los filtros activos se combinan con el operador AND.
+ * - Busquedas de texto utilizan coincidencia parcial (LIKE '%valor%') insensible a mayusculas/minusculas.
+ * - Permite rangos de fechas de registro y filtros por estatus activo.
  */
 public final class ClienteSpecification {
 
     private ClienteSpecification() {
     }
 
-    public static Specification<Cliente> buscar(String nombre, String rfc, String curp,
-                                                String cuenta, String correo) {
+    public static Specification<Cliente> buscar(ClienteSearchRequest request, Integer clienteIdRestringido) {
         return (root, query, cb) -> {
             List<Predicate> filtros = new ArrayList<>();
 
-            if (tieneValor(nombre)) {
-                // nombre + segundo nombre, para que "Ana Sofia" encuentre a quien tenga ambos
-                Expression<String> nombreCompleto = cb.concat(
-                        cb.concat(root.get("nombre"), " "),
-                        cb.coalesce(root.get("segundoNombre"), ""));
-                filtros.add(contiene(cb, nombreCompleto, nombre));
+            // Restriccion de seguridad para usuarios normales (solo ven su propio registro)
+            if (clienteIdRestringido != null) {
+                filtros.add(cb.equal(root.get("id"), clienteIdRestringido));
             }
-            if (tieneValor(rfc)) {
-                filtros.add(contiene(cb, root.get("rfc"), rfc));
-            }
-            if (tieneValor(curp)) {
-                filtros.add(contiene(cb, root.get("curp"), curp));
-            }
-            if (tieneValor(correo)) {
-                filtros.add(contiene(cb, root.get("correo"), correo));
-            }
-            if (tieneValor(cuenta)) {
-                // Subquery para no duplicar clientes con varias cuentas
-                Subquery<Integer> sub = query.subquery(Integer.class);
-                Root<Cuenta> cu = sub.from(Cuenta.class);
-                sub.select(cu.get("cliente").get("id"))
-                        .where(contiene(cb, cu.get("numeroCuenta"), cuenta));
-                filtros.add(root.get("id").in(sub));
+
+            if (request != null) {
+                if (tieneValor(request.getNombre())) {
+                    Expression<String> nombreCompleto = cb.concat(
+                            cb.concat(root.get("nombre"), " "),
+                            cb.coalesce(root.get("segundoNombre"), ""));
+                    filtros.add(contiene(cb, nombreCompleto, request.getNombre()));
+                }
+
+                if (tieneValor(request.getRfc())) {
+                    filtros.add(contiene(cb, root.get("rfc"), request.getRfc()));
+                }
+
+                if (tieneValor(request.getCurp())) {
+                    filtros.add(contiene(cb, root.get("curp"), request.getCurp()));
+                }
+
+                if (tieneValor(request.getCorreo())) {
+                    filtros.add(contiene(cb, root.get("correo"), request.getCorreo()));
+                }
+
+                if (tieneValor(request.getNumeroCuenta())) {
+                    Subquery<Integer> sub = query.subquery(Integer.class);
+                    Root<Cuenta> cu = sub.from(Cuenta.class);
+                    sub.select(cu.get("cliente").get("id"))
+                            .where(contiene(cb, cu.get("numeroCuenta"), request.getNumeroCuenta()));
+                    filtros.add(root.get("id").in(sub));
+                }
+
+                if (request.getFechaDesde() != null) {
+                    LocalDateTime desdeDT = request.getFechaDesde().atStartOfDay();
+                    filtros.add(cb.greaterThanOrEqualTo(root.get("fechaRegistro"), desdeDT));
+                }
+
+                if (request.getFechaHasta() != null) {
+                    LocalDateTime hastaDT = request.getFechaHasta().atTime(23, 59, 59);
+                    filtros.add(cb.lessThanOrEqualTo(root.get("fechaRegistro"), hastaDT));
+                }
+
+                if (request.getActivo() != null) {
+                    filtros.add(cb.equal(root.get("activo"), request.getActivo()));
+                }
             }
 
             return cb.and(filtros.toArray(new Predicate[0]));

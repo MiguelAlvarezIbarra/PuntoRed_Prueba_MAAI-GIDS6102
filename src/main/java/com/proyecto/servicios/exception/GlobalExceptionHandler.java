@@ -96,6 +96,12 @@ public class GlobalExceptionHandler {
         return construir(7, ex.getMessage(), HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler(ClienteInactivoException.class)
+    public ResponseEntity<GenericResponse> handleClienteInactivo(ClienteInactivoException ex) {
+        log.warn("Cliente inactivo: {}", ex.getMessage());
+        return construir(11, ex.getMessage(), HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(TokenFaltanteException.class)
     public ResponseEntity<GenericResponse> handleTokenFaltante(TokenFaltanteException ex) {
         log.warn("Token faltante o invalido: {}", ex.getMessage());

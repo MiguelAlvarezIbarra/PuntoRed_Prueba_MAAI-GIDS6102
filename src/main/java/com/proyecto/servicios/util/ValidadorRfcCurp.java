@@ -46,6 +46,27 @@ public class ValidadorRfcCurp {
         }
     }
 
+    public static void validarActualizacion(com.proyecto.servicios.model.ClienteActualizaRequest request, LocalDate fechaNacimientoRegistrada) {
+        if (fechaNacimientoRegistrada == null) return;
+        String baseCalculada = calcularBaseRfcCurp(
+                request.getNombre(),
+                request.getApellidoPaterno(),
+                request.getApellidoMaterno(),
+                fechaNacimientoRegistrada
+        );
+
+        if (request.getRfc() != null) {
+            String rfcInput = request.getRfc().toUpperCase();
+            if (rfcInput.length() >= 10) {
+                String baseRfcInput = rfcInput.substring(0, 10);
+                if (!baseRfcInput.equals(baseCalculada)) {
+                    throw new ValidacionException("Las primeras 10 posiciones del RFC (" + baseRfcInput + 
+                            ") no coinciden con los nombres y apellidos proporcionados. Deberían ser: " + baseCalculada);
+                }
+            }
+        }
+    }
+
     private static String calcularBaseRfcCurp(String nombre, String paterno, String materno, LocalDate fechaNac) {
         nombre = limpiarCadena(nombre);
         paterno = limpiarCadena(paterno);

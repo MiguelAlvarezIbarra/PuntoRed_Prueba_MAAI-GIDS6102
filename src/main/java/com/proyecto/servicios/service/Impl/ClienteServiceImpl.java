@@ -55,6 +55,9 @@ public class ClienteServiceImpl implements ClienteService {
     @Autowired
     private GeneradorCuenta generadorCuenta;
 
+    @Autowired
+    private com.proyecto.servicios.config.SeguridadGuard seguridadGuard;
+
     @Value("${cuenta.saldo-inicial:0.00}")
     private BigDecimal saldoInicial;
 
@@ -104,13 +107,22 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     @Transactional
-    public ClienteResponse actualizaCliente(String rfc, ClienteRequest request) {
+    public ClienteResponse actualizaCliente(com.proyecto.servicios.model.ClienteActualizaRequest request) {
+        String rfc = request.getRfc();
         log.info("Inicio actualizaCliente - rfc={}", rfc);
-        validarCatalogos(request);
+
         Cliente cliente = clienteRepository.findByRfc(rfc)
                 .orElseThrow(() -> new ClienteNoEncontradoException("El cliente con RFC " + rfc + " no existe"));
 
-        // CURP, RFC y numero de cuenta NUNCA se modifican, aunque vengan en el request.
+        if (Boolean.FALSE.equals(cliente.getActivo())) {
+            throw new com.proyecto.servicios.exception.ClienteInactivoException(
+                    "El cliente con RFC " + rfc + " se encuentra dado de baja y no puede ser modificado");
+        }
+
+        validarCatalogosActualiza(request);
+        com.proyecto.servicios.util.ValidadorRfcCurp.validarActualizacion(request, cliente.getFechaNacimiento());
+
+        // CURP, RFC y numero de cuenta NUNCA se modifican, son inmutables.
         if (request.getCorreo() != null && !request.getCorreo().equalsIgnoreCase(cliente.getCorreo())) {
             if (clienteRepository.existsByCorreo(request.getCorreo())) {
                 throw new CorreoDuplicadoException("Ya existe un cliente registrado con ese correo");
@@ -150,10 +162,16 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     @Transactional
-    public GenericResponse eliminaCliente(String rfc) {
+    public GenericResponse eliminaCliente(com.proyecto.servicios.model.ClienteBajaRequest request) {
+        String rfc = request.getRfc();
         log.info("Inicio eliminaCliente (baja logica) - rfc={}", rfc);
         Cliente cliente = clienteRepository.findByRfc(rfc)
                 .orElseThrow(() -> new ClienteNoEncontradoException("El cliente con RFC " + rfc + " no existe"));
+
+        if (Boolean.FALSE.equals(cliente.getActivo())) {
+            throw new com.proyecto.servicios.exception.ClienteInactivoException(
+                    "El cliente con RFC " + rfc + " ya se encuentra dado de baja");
+        }
 
         cliente.setActivo(false);
         clienteRepository.save(cliente);
@@ -174,10 +192,15 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     @Transactional
-    public GenericResponse reactivarCliente(String rfc) {
+    public GenericResponse reactivarCliente(com.proyecto.servicios.model.ClienteReactivarRequest request) {
+        String rfc = request.getRfc();
         log.info("Inicio reactivarCliente - rfc={}", rfc);
         Cliente cliente = clienteRepository.findByRfc(rfc)
                 .orElseThrow(() -> new ClienteNoEncontradoException("El cliente con RFC " + rfc + " no existe"));
+
+        if (Boolean.TRUE.equals(cliente.getActivo())) {
+            throw new ValidacionException("El cliente con RFC " + rfc + " ya se encuentra activo");
+        }
 
         cliente.setActivo(true);
         clienteRepository.save(cliente);
@@ -196,65 +219,22 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     @Override
-    public ListaClientesResponse obtenerClientes() {
-        List<ClienteData> data = clienteRepository.findAll().stream()
-                .map(this::toClienteData)
-                .collect(Collectors.toList());
-        return construirLista(data);
-    }
+    public ListaClientesResponse buscarDinamico(com.proyecto.servicios.model.ClienteSearchRequest request, String authorizationHeader) {
+        com.proyecto.servicios.config.SeguridadGuard.InfoToken infoToken = seguridadGuard.extraerInfoToken(authorizationHeader);
 
+        Integer clienteIdRestringido = null;
+        if (infoToken != null && !infoToken.esAdmin()) {
+            // Usuario normal: unicamente puede consultar su propia informacion
+            clienteIdRestringido = infoToken.getClienteId();
+        }
 
+        // Si no es admin y no se solicito explicitamente un estatus activo, por seguridad solo devolvemos clientes activos
+        if (request != null && request.getActivo() == null && (infoToken == null || !infoToken.esAdmin())) {
+            request.setActivo(true);
+        }
 
-    @Override
-    public ClienteResponse obtenerClientePorCurp(String curp) {
-        Cliente cliente = clienteRepository.findByCurp(curp)
-                .orElseThrow(() -> new ClienteNoEncontradoException("No existe un cliente con esa CURP"));
-        return construirRespuestaDesdeCliente(cliente);
-    }
-
-    @Override
-    public ClienteResponse obtenerClientePorRfc(String rfc) {
-        Cliente cliente = clienteRepository.findByRfc(rfc)
-                .orElseThrow(() -> new ClienteNoEncontradoException("No existe un cliente con ese RFC"));
-        return construirRespuestaDesdeCliente(cliente);
-    }
-
-    @Override
-    public ClienteResponse obtenerClientePorCorreo(String correo) {
-        Cliente cliente = clienteRepository.findByCorreo(correo)
-                .orElseThrow(() -> new ClienteNoEncontradoException("No existe un cliente con ese correo"));
-        return construirRespuestaDesdeCliente(cliente);
-    }
-
-    @Override
-    public ClienteResponse obtenerClientePorNumeroCuenta(String numeroCuenta) {
-        Cuenta cuenta = cuentaRepository.findByNumeroCuenta(numeroCuenta)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No existe una cuenta con ese numero"));
-        return construirRespuestaDesdeCliente(cuenta.getCliente());
-    }
-
-    @Override
-    public ListaClientesResponse obtenerClientesActivos() {
-        List<ClienteData> data = clienteRepository.findByActivoTrue().stream()
-                .map(this::toClienteData)
-                .collect(Collectors.toList());
-        return construirLista(data);
-    }
-
-    @Override
-    public ListaClientesResponse obtenerClientesPorRangoFechas(LocalDate desde, LocalDate hasta) {
-        LocalDateTime desdeDT = desde.atStartOfDay();
-        LocalDateTime hastaDT = hasta.atTime(23, 59, 59);
-        List<ClienteData> data = clienteRepository.findByFechaRegistroBetween(desdeDT, hastaDT).stream()
-                .map(this::toClienteData)
-                .collect(Collectors.toList());
-        return construirLista(data);
-    }
-
-    @Override
-    public ListaClientesResponse buscarDinamico(String nombre, String rfc, String curp, String cuenta, String correo) {
         List<ClienteData> data = clienteRepository.findAll(
-                        com.proyecto.servicios.repositorys.sf.ClienteSpecification.buscar(nombre, rfc, curp, cuenta, correo))
+                        com.proyecto.servicios.repositorys.sf.ClienteSpecification.buscar(request, clienteIdRestringido))
                 .stream()
                 .map(this::toClienteData)
                 .collect(Collectors.toList());
@@ -268,6 +248,17 @@ public class ClienteServiceImpl implements ClienteService {
     private void validarCatalogos(ClienteRequest request) {
         com.proyecto.servicios.util.ValidadorRfcCurp.validar(request);
         
+        if (clienteRepository.countNacionalidad(request.getNacionalidad()) == 0) {
+            throw new ValidacionException("Código 7: La nacionalidad proporcionada no es válida o no existe en el catálogo");
+        }
+        if (request.getDomicilio() != null && request.getDomicilio().getPais() != null) {
+            if (clienteRepository.countPais(request.getDomicilio().getPais()) == 0) {
+                throw new ValidacionException("Código 7: El país proporcionado no es válido o no existe en el catálogo");
+            }
+        }
+    }
+
+    private void validarCatalogosActualiza(com.proyecto.servicios.model.ClienteActualizaRequest request) {
         if (clienteRepository.countNacionalidad(request.getNacionalidad()) == 0) {
             throw new ValidacionException("Código 7: La nacionalidad proporcionada no es válida o no existe en el catálogo");
         }
