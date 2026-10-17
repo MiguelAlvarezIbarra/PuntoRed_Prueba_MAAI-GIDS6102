@@ -9,6 +9,7 @@ import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -44,9 +45,8 @@ public class RedisConfig {
                         ? redisProperties.getTimeout() : Duration.ofMillis(1500))
                 .build();
 
-        org.springframework.data.redis.connection.RedisStandaloneConfiguration standaloneConfig =
-                new org.springframework.data.redis.connection.RedisStandaloneConfiguration(
-                        redisProperties.getHost(), redisProperties.getPort());
+        RedisStandaloneConfiguration standaloneConfig =
+                new RedisStandaloneConfiguration(redisProperties.getHost(), redisProperties.getPort());
 
         return new LettuceConnectionFactory(standaloneConfig, clientConfig);
     }

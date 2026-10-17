@@ -3,6 +3,7 @@ package com.proyecto.servicios.service.Impl;
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Usuario;
 import com.proyecto.servicios.exception.CredencialesInvalidasException;
+import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.GenericResponse;
 import com.proyecto.servicios.model.LoginRequest;
@@ -65,15 +66,14 @@ public class UsuarioServiceImpl implements UsuarioService {
         String correoHash = hashUtil.sha256(request.getCorreo());
 
         Usuario usuario = usuarioRepository.findByCorreoHash(correoHash)
-                // Mensaje generico a proposito: no revelar si el correo existe o no.
-                .orElseThrow(() -> new CredencialesInvalidasException("Correo o password incorrectos"));
+                .orElseThrow(() -> new CredencialesInvalidasException(MensajeError.CREDENCIALES_INVALIDAS));
 
         if (!passwordEncoder.matches(request.getPassword(), usuario.getPasswordHash())) {
-            throw new CredencialesInvalidasException("Correo o password incorrectos");
+            throw new CredencialesInvalidasException(MensajeError.CREDENCIALES_INVALIDAS);
         }
 
         if (Boolean.FALSE.equals(usuario.getCliente().getActivo())) {
-            throw new ValidacionException("El cliente esta dado de baja, no puede iniciar sesion");
+            throw new ValidacionException(MensajeError.SESION_INACTIVA_LOGIN);
         }
 
         String jwt = jwtUtil.generar(usuario.getCliente().getId(), correoHash, usuario.getRol());

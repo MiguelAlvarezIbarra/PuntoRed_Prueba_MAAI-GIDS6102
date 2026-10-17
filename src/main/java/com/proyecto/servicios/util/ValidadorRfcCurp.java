@@ -1,6 +1,7 @@
 package com.proyecto.servicios.util;
 
 import com.proyecto.servicios.exception.ValidacionException;
+import com.proyecto.servicios.model.ClienteActualizaRequest;
 import com.proyecto.servicios.model.ClienteRequest;
 
 import java.time.LocalDate;
@@ -46,7 +47,7 @@ public class ValidadorRfcCurp {
         }
     }
 
-    public static void validarActualizacion(com.proyecto.servicios.model.ClienteActualizaRequest request, LocalDate fechaNacimientoRegistrada) {
+    public static void validarActualizacion(ClienteActualizaRequest request, LocalDate fechaNacimientoRegistrada) {
         if (fechaNacimientoRegistrada == null) return;
         String baseCalculada = calcularBaseRfcCurp(
                 request.getNombre(),

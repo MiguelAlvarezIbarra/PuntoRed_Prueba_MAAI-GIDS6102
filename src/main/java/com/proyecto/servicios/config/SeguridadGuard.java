@@ -3,6 +3,7 @@ package com.proyecto.servicios.config;
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.exception.AccesoDenegadoException;
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
+import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.TokenFaltanteException;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.util.JwtUtil;
@@ -34,7 +35,7 @@ public class SeguridadGuard {
      */
     public void validarAccesoClientePorRfc(String authorizationHeader, String rfcObjetivo) {
         if (authorizationHeader == null || !authorizationHeader.startsWith(PREFIJO_BEARER)) {
-            throw new TokenFaltanteException("Se requiere autenticacion para realizar esta operacion (header Authorization: Bearer <token>)");
+            throw new TokenFaltanteException(MensajeError.TOKEN_FALTANTE);
         }
 
         String token = authorizationHeader.substring(PREFIJO_BEARER.length());
@@ -49,13 +50,13 @@ public class SeguridadGuard {
 
             // Usuario normal: verificar que el RFC le pertenece
             Cliente cliente = clienteRepository.findByRfc(rfcObjetivo)
-                    .orElseThrow(() -> new ClienteNoEncontradoException("El cliente con RFC " + rfcObjetivo + " no existe"));
+                    .orElseThrow(() -> new ClienteNoEncontradoException(MensajeError.CLIENTE_NO_ENCONTRADO));
 
             if (!cliente.getId().equals(tokenClienteId)) {
-                throw new AccesoDenegadoException("No tienes permisos para consultar o modificar la informacion de otro cliente");
+                throw new AccesoDenegadoException(MensajeError.ACCESO_DENEGADO);
             }
         } catch (JwtException e) {
-            throw new TokenFaltanteException("Token invalido o expirado");
+            throw new TokenFaltanteException(MensajeError.TOKEN_INVALIDO);
         }
     }
 
@@ -74,7 +75,7 @@ public class SeguridadGuard {
             Integer clienteId = jwtUtil.obtenerClienteId(token);
             return new InfoToken(clienteId, rol);
         } catch (JwtException e) {
-            throw new TokenFaltanteException("Token invalido o expirado");
+            throw new TokenFaltanteException(MensajeError.TOKEN_INVALIDO);
         }
     }
 
