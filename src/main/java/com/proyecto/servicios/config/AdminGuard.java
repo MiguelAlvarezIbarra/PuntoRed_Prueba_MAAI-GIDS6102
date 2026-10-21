@@ -1,6 +1,7 @@
 package com.proyecto.servicios.config;
 
 import com.proyecto.servicios.exception.AccesoDenegadoException;
+import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.TokenFaltanteException;
 import com.proyecto.servicios.util.JwtUtil;
 import com.proyecto.servicios.util.Roles;
@@ -10,8 +11,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Verifica que el header Authorization traiga un JWT valido y que su rol sea ADMIN.
- * Se usa a mano en los controllers que lo necesiten (no es un filtro global, porque
- * todavia no se pidio proteger TODOS los endpoints, solo el de creacion por un admin).
+ * Utiliza MensajeError enum para estandarizar los mensajes.
  */
 @Component
 public class AdminGuard {
@@ -26,18 +26,18 @@ public class AdminGuard {
      */
     public Integer exigirAdmin(String authorizationHeader) {
         if (authorizationHeader == null || !authorizationHeader.startsWith(PREFIJO_BEARER)) {
-            throw new TokenFaltanteException("Se requiere un token de administrador (header Authorization: Bearer <jwt>)");
+            throw new TokenFaltanteException(MensajeError.TOKEN_FALTANTE);
         }
 
         String token = authorizationHeader.substring(PREFIJO_BEARER.length());
         try {
             Integer rol = jwtUtil.obtenerRol(token);
-            if (rol == null || rol != Roles.ADMIN) {
-                throw new AccesoDenegadoException("Esta operacion solo puede realizarla un administrador");
+            if (rol == null || !rol.equals(Roles.ADMIN)) {
+                throw new AccesoDenegadoException(MensajeError.ACCESO_DENEGADO_ADMIN);
             }
             return jwtUtil.obtenerClienteId(token);
         } catch (JwtException e) {
-            throw new TokenFaltanteException("Token invalido o expirado");
+            throw new TokenFaltanteException(MensajeError.TOKEN_INVALIDO);
         }
     }
 }

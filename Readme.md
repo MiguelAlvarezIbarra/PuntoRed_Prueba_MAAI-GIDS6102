@@ -151,24 +151,21 @@ Módulo para registrar clientes personas físicas, crearles automáticamente una
 
 #### Endpoints
 
-| Método | Endpoint | Descripción |
-|---|---|---|
-| POST | `/clientes` | Registra cliente + domicilio + cuenta + usuario (rol siempre `2`) |
-| GET | `/clientes` | Lista todos los clientes |
-| GET | `/clientes/{rfc}` | Consulta por RFC |
-| PUT | `/clientes/{rfc}` | Actualiza (reemplazo completo; CURP, RFC y número de cuenta nunca se modifican) |
-| DELETE | `/clientes/{rfc}` | Baja lógica (`activo=false` y sus cuentas pasan a `INACTIVA`) |
-| PATCH | `/clientes/{rfc}/reactivar` | Reactiva al cliente y sus cuentas |
-| POST | `/clientes/search` | Búsqueda dinámica por coincidencia (JSON con `nombre`, `rfc`, `curp`, `correo`, `numeroCuenta`; los campos enviados se combinan con AND) |
-| GET | `/clientes/curp/{curp}` \| `/correo?correo=` \| `/cuenta/{numeroCuenta}` | Búsquedas puntuales |
-| GET | `/clientes/activos` | Solo clientes activos |
-| GET | `/clientes/rango-fechas?desde=&hasta=` | Clientes registrados en un rango de fechas |
-| GET | `/cuentas/{numeroCuenta}` | Consulta una cuenta |
-| GET | `/cuentas/activas` | Cuentas activas |
-| GET | `/cuentas/{numeroCuenta}/saldo` | Consulta el saldo |
-| POST | `/auth/login` | Login: valida correo/password y regresa un JWT + rol |
-| POST | `/auth/logout` | Cierra la sesión (header `Authorization: Bearer <jwt>`) |
-| POST | `/admin/clientes` | Solo administradores (`Authorization: Bearer <jwt de rol=1>`): crea un cliente/usuario eligiendo el rol |
+Cumplen con la restricción de **no utilizar `@PathVariable` ni `@RequestParam`**; todos los criterios e información se envían mediante objetos Request DTO con `@RequestBody` y validaciones `@Valid`:
+
+| Método | Endpoint | Request Body | Descripción |
+|---|---|---|---|
+| POST | `/clientes` | `ClienteRequest` | Registra cliente + domicilio + cuenta + usuario (rol `2` por defecto) |
+| PUT | `/clientes` | `ClienteActualizaRequest` | Actualiza cliente identificado por RFC en el body (protegido por token, clientes inactivos no modificables) |
+| DELETE | `/clientes` | `ClienteBajaRequest` | Baja lógica de cliente y sus cuentas identificadas por RFC en el body (protegido por token) |
+| PATCH | `/clientes/reactivar` | `ClienteReactivarRequest` | Reactiva cliente inactivo y sus cuentas (solo Administrador) |
+| POST | `/clientes/search` | `ClienteSearchRequest` | **Único endpoint de consulta y búsqueda dinámica**: filtros combinables con AND (`nombre`, `rfc`, `curp`, `correo`, `numeroCuenta`, `fechaDesde`, `fechaHasta`, `activo`). Respeta permisos de usuario. |
+| POST | `/cuentas/consulta` | `CuentaConsultaRequest` | Consulta información de una cuenta por su número (vía RequestBody) |
+| GET | `/cuentas/activas` | *(ninguno)* | Lista todas las cuentas con estatus activa |
+| POST | `/cuentas/saldo` | `CuentaConsultaRequest` | Consulta de saldo de una cuenta por su número (vía RequestBody) |
+| POST | `/auth/login` | `LoginRequest` | Inicio de sesión: valida credenciales y entrega JWT + rol |
+| POST | `/auth/logout` | *(header Bearer)* | Cierra la sesión activa del usuario |
+| POST | `/admin/clientes` | `AdminClienteRequest` | Exclusivo admin (`Authorization: Bearer <jwt de rol=1>`): registra cliente asignando rol |
 
 #### Seguridad y sesión
 

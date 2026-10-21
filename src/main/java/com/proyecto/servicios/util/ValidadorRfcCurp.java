@@ -1,6 +1,7 @@
 package com.proyecto.servicios.util;
 
 import com.proyecto.servicios.exception.ValidacionException;
+import com.proyecto.servicios.model.ClienteActualizaRequest;
 import com.proyecto.servicios.model.ClienteRequest;
 
 import java.time.LocalDate;
@@ -41,6 +42,27 @@ public class ValidadorRfcCurp {
                 if (!sexoEsperado.equals(sexoCurp)) {
                     throw new ValidacionException("El sexo en la CURP (" + sexoCurp + 
                             ") no coincide con el sexo del cliente (" + sexoEsperado + ").");
+                }
+            }
+        }
+    }
+
+    public static void validarActualizacion(ClienteActualizaRequest request, LocalDate fechaNacimientoRegistrada) {
+        if (fechaNacimientoRegistrada == null) return;
+        String baseCalculada = calcularBaseRfcCurp(
+                request.getNombre(),
+                request.getApellidoPaterno(),
+                request.getApellidoMaterno(),
+                fechaNacimientoRegistrada
+        );
+
+        if (request.getRfc() != null) {
+            String rfcInput = request.getRfc().toUpperCase();
+            if (rfcInput.length() >= 10) {
+                String baseRfcInput = rfcInput.substring(0, 10);
+                if (!baseRfcInput.equals(baseCalculada)) {
+                    throw new ValidacionException("Las primeras 10 posiciones del RFC (" + baseRfcInput + 
+                            ") no coinciden con los nombres y apellidos proporcionados. Deberían ser: " + baseCalculada);
                 }
             }
         }

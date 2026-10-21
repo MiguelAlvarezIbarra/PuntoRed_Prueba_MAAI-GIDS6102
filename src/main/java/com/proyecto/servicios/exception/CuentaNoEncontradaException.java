@@ -4,4 +4,8 @@ public class CuentaNoEncontradaException extends RuntimeException {
     public CuentaNoEncontradaException(String mensaje) {
         super(mensaje);
     }
+
+    public CuentaNoEncontradaException(MensajeError error) {
+        super(error.getMensaje());
+    }
 }

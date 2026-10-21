@@ -14,9 +14,6 @@ import java.time.LocalDate;
 @NoArgsConstructor
 public class ClienteRequest {
 
-    // Se ignora en creacion (lo asigna la BD) y no se permite modificar en update.
-    private Integer id;
-
     // ---- Datos personales ----
     @NotBlank(message = "Código 1: El nombre es obligatorio")
     @Pattern(regexp = "^[\\p{L} ]{3,50}$", message = "Código 4: El nombre solo debe contener letras y espacios (minimo 3, maximo 50 caracteres)")
@@ -96,9 +93,7 @@ public class ClienteRequest {
     @Valid
     private DomicilioRequest domicilio;
 
-    // Password de acceso: solo se exige al CREAR el cliente (se valida a mano en el
-    // servicio, no aqui, porque este mismo DTO se reutiliza en el PUT de actualizacion
-    // y ahi el password no viaja).
+    @NotBlank(message = "El password es obligatorio")
     @Size(min = 8, message = "El password debe tener al menos 8 caracteres")
     private String password;
 }
