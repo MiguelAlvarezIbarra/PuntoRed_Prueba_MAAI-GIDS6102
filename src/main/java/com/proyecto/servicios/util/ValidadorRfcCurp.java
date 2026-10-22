@@ -1,5 +1,6 @@
 package com.proyecto.servicios.util;
 
+import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.ClienteActualizaRequest;
 import com.proyecto.servicios.model.ClienteRequest;
@@ -22,8 +23,7 @@ public class ValidadorRfcCurp {
             if (rfcInput.length() >= 10) {
                 String baseRfcInput = rfcInput.substring(0, 10);
                 if (!baseRfcInput.equals(baseCalculada)) {
-                    throw new ValidacionException("Las primeras 10 posiciones del RFC (" + baseRfcInput + 
-                            ") no coinciden con los datos del cliente. Deberían ser: " + baseCalculada);
+                    throw new ValidacionException(MensajeError.RFC_NO_COINCIDE.formatear(baseRfcInput, baseCalculada));
                 }
             }
         }
@@ -33,15 +33,13 @@ public class ValidadorRfcCurp {
             if (curpInput.length() >= 11) {
                 String baseCurpInput = curpInput.substring(0, 10);
                 if (!baseCurpInput.equals(baseCalculada)) {
-                    throw new ValidacionException("Las primeras 10 posiciones de la CURP (" + baseCurpInput + 
-                            ") no coinciden con los datos del cliente. Deberían ser: " + baseCalculada);
+                    throw new ValidacionException(MensajeError.CURP_NO_COINCIDE.formatear(baseCurpInput, baseCalculada));
                 }
                 
                 String sexoEsperado = request.getSexo().toUpperCase();
                 String sexoCurp = curpInput.substring(10, 11);
                 if (!sexoEsperado.equals(sexoCurp)) {
-                    throw new ValidacionException("El sexo en la CURP (" + sexoCurp + 
-                            ") no coincide con el sexo del cliente (" + sexoEsperado + ").");
+                    throw new ValidacionException(MensajeError.SEXO_CURP_NO_COINCIDE.formatear(sexoCurp, sexoEsperado));
                 }
             }
         }
@@ -61,8 +59,7 @@ public class ValidadorRfcCurp {
             if (rfcInput.length() >= 10) {
                 String baseRfcInput = rfcInput.substring(0, 10);
                 if (!baseRfcInput.equals(baseCalculada)) {
-                    throw new ValidacionException("Las primeras 10 posiciones del RFC (" + baseRfcInput + 
-                            ") no coinciden con los nombres y apellidos proporcionados. Deberían ser: " + baseCalculada);
+                    throw new ValidacionException(MensajeError.RFC_NO_COINCIDE.formatear(baseRfcInput, baseCalculada));
                 }
             }
         }

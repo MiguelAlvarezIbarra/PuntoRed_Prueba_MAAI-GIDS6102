@@ -2,14 +2,21 @@ package com.proyecto.servicios.service.Impl;
 
 import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
+import com.proyecto.servicios.exception.gestopago.GestoPagoAuthenticationException;
+import com.proyecto.servicios.exception.gestopago.GestoPagoCommunicationException;
+import com.proyecto.servicios.exception.gestopago.GestoPagoResponseException;
+import com.proyecto.servicios.exception.gestopago.GestoPagoTimeoutException;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
 import com.proyecto.servicios.service.GestoPagoTokenService;
+import feign.FeignException;
+import feign.RetryableException;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.net.SocketTimeoutException;
 import java.util.Optional;
 
 @Service
@@ -37,7 +44,7 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
     @Override
     @Scheduled(fixedRateString = "${gestopago.auth.refresh-rate-ms:3600000}", initialDelay = 0)
     public void renovarToken() {
-        log.info("Renovando token GestoPago para distribuidor={}, dispositivo={}", idDistribuidor, codigoDispositivo);
+        log.info("Inicio renovarToken GestoPago - distribuidor={}, dispositivo={}", idDistribuidor, codigoDispositivo);
 
         if (idDistribuidor == null || codigoDispositivo == null || codigoDispositivo.isBlank()
                 || password == null || password.isBlank()) {
@@ -49,33 +56,39 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
         String rawResponse;
         try {
             rawResponse = gestoPagoAuthClient.authenticate(idDistribuidor, codigoDispositivo, password);
-        } catch (Exception e) {
-            log.error("Falló la llamada al endpoint authenticate de GestoPago: {}", e.getMessage(), e);
-            throw new IllegalStateException("Falló la autenticación con GestoPago: " + e.getMessage(), e);
+        } catch (RetryableException e) {
+            // No se loguea e.getMessage(): la URL de Feign incluye el password como query param.
+            log.error("Fallo de red al llamar authenticate de GestoPago: {}", e.getClass().getSimpleName());
+            if (e.getCause() instanceof SocketTimeoutException) {
+                throw new GestoPagoTimeoutException("Timeout al llamar authenticate de GestoPago");
+            }
+            throw new GestoPagoCommunicationException("Error de comunicacion al llamar authenticate de GestoPago");
+        } catch (FeignException e) {
+            log.error("GestoPago respondio HTTP {} en authenticate", e.status());
+            throw new GestoPagoAuthenticationException("GestoPago rechazo authenticate con HTTP " + e.status());
         }
 
-        log.info("Respuesta cruda de authenticate de GestoPago:\n{}", rawResponse);
-
         if (rawResponse == null || rawResponse.isBlank()) {
-            throw new IllegalStateException("GestoPago regresó una respuesta vacía al autenticar.");
+            throw new GestoPagoResponseException("GestoPago regreso una respuesta vacia al autenticar.", null);
         }
 
         JSONObject json;
         try {
             json = new JSONObject(rawResponse);
         } catch (Exception e) {
-            throw new IllegalStateException("La respuesta de authenticate no es JSON válido: " + rawResponse, e);
+            throw new GestoPagoResponseException("La respuesta de authenticate no es JSON valido.", null);
         }
 
-        log.info("Claves recibidas en la respuesta de authenticate: {}", json.keySet());
+        // Solo se registran las claves, nunca el valor del token.
+        log.debug("Claves recibidas en la respuesta de authenticate: {}", json.keySet());
 
         String token = json.optString("token", null);
         boolean pareceValido = token != null && !token.isBlank() && !"INVALID".equalsIgnoreCase(token);
         boolean success = json.optBoolean("success", pareceValido);
 
         if (!success || !pareceValido) {
-            String motivo = json.optString("message", json.toString());
-            throw new IllegalStateException("GestoPago rechazó la autenticación. Motivo: " + motivo);
+            String motivo = json.optString("message", "sin motivo informado");
+            throw new GestoPagoAuthenticationException("GestoPago rechazo la autenticacion. Motivo: " + motivo);
         }
 
         GestoPagoToken tokenEntity = tokenRepository

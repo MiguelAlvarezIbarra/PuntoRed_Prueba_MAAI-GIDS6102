@@ -26,6 +26,8 @@ class ProductoServiceTest {
     private GestoPagoTokenService gestoPagoTokenService;
     @Mock
     private ProductoRepository productoRepository;
+    @Mock
+    private ProductoCacheService productoCacheService;
 
     private ProductoService productoService;
     private GestoPagoToken tokenActivo;
@@ -50,7 +52,7 @@ class ProductoServiceTest {
 
     @BeforeEach
     void setUp() {
-        productoService = new ProductoService(gestoPagoServiceClient, gestoPagoTokenService, productoRepository);
+        productoService = new ProductoService(gestoPagoServiceClient, gestoPagoTokenService, productoRepository, productoCacheService);
         tokenActivo = new GestoPagoToken();
         tokenActivo.setToken("token-valido");
     }
@@ -76,7 +78,10 @@ class ProductoServiceTest {
         // Después de renovar, sigue sin encontrar token
         doNothing().when(gestoPagoTokenService).renovarToken();
 
-        productoService.sincronizarProductos();
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.proyecto.servicios.exception.gestopago.GestoPagoAuthenticationException.class,
+                () -> productoService.sincronizarProductos()
+        );
 
         verify(gestoPagoTokenService).renovarToken();
         // No se debe llamar al servicio de productos porque no hay token
@@ -97,7 +102,7 @@ class ProductoServiceTest {
     @Test
     void obtenerTodosLosProductos_retornaListaDesdeRepositorio() {
         Producto p = Producto.builder().idProducto(1).idServicio(1).nombreProducto("Test").nombreServicio("Test").build();
-        when(productoRepository.findAll()).thenReturn(List.of(p));
+        when(productoRepository.findAllOrdenadosPorTipoFront()).thenReturn(List.of(p));
 
         List<Producto> resultado = productoService.obtenerTodosLosProductos();
 

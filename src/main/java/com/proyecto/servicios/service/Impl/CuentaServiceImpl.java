@@ -2,6 +2,7 @@ package com.proyecto.servicios.service.Impl;
 
 import com.proyecto.servicios.entity.sf.Cuenta;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
+import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.model.CuentaData;
 import com.proyecto.servicios.model.CuentaResponse;
 import com.proyecto.servicios.model.ListaCuentasResponse;
@@ -28,7 +29,7 @@ public class CuentaServiceImpl implements CuentaService {
     public CuentaResponse obtenerCuentaPorNumero(String numeroCuenta) {
         log.info("Inicio obtenerCuentaPorNumero - numeroCuenta={}", numeroCuenta);
         Cuenta cuenta = cuentaRepository.findByNumeroCuenta(numeroCuenta)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No existe una cuenta con ese numero"));
+                .orElseThrow(() -> new CuentaNoEncontradaException(MensajeError.CUENTA_NO_ENCONTRADA));
 
         CuentaResponse response = new CuentaResponse();
         response.setCuenta(toData(cuenta));
@@ -54,7 +55,7 @@ public class CuentaServiceImpl implements CuentaService {
     public SaldoResponse consultarSaldo(String numeroCuenta) {
         log.info("Inicio consultarSaldo - numeroCuenta={}", numeroCuenta);
         Cuenta cuenta = cuentaRepository.findByNumeroCuenta(numeroCuenta)
-                .orElseThrow(() -> new CuentaNoEncontradaException("No existe una cuenta con ese numero"));
+                .orElseThrow(() -> new CuentaNoEncontradaException(MensajeError.CUENTA_NO_ENCONTRADA));
         SaldoResponse response = new SaldoResponse();
         response.setNumeroCuenta(cuenta.getNumeroCuenta());
         response.setSaldo(cuenta.getSaldo());
