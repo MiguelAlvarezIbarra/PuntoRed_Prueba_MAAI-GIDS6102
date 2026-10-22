@@ -11,6 +11,7 @@ import com.proyecto.servicios.exception.CorreoDuplicadoException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
+import com.proyecto.servicios.exception.TokenFaltanteException;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.ClienteActualizaRequest;
 import com.proyecto.servicios.model.ClienteBajaRequest;
@@ -223,16 +224,21 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     public ListaClientesResponse buscarDinamico(ClienteSearchRequest request, String authorizationHeader) {
+        log.info("Inicio buscarDinamico");
         InfoToken infoToken = seguridadGuard.extraerInfoToken(authorizationHeader);
+        if (infoToken == null) {
+            // Sin token no hay forma de aplicar la restriccion por recurso: se rechaza.
+            throw new TokenFaltanteException(MensajeError.TOKEN_FALTANTE);
+        }
 
         Integer clienteIdRestringido = null;
-        if (infoToken != null && !infoToken.esAdmin()) {
+        if (!infoToken.esAdmin()) {
             // Usuario normal: unicamente puede consultar su propia informacion
             clienteIdRestringido = infoToken.getClienteId();
         }
 
         // Si no es admin y no se solicito explicitamente un estatus activo, por seguridad solo devolvemos clientes activos
-        if (request != null && request.getActivo() == null && (infoToken == null || !infoToken.esAdmin())) {
+        if (request != null && request.getActivo() == null && !infoToken.esAdmin()) {
             request.setActivo(true);
         }
 
@@ -241,6 +247,7 @@ public class ClienteServiceImpl implements ClienteService {
                 .stream()
                 .map(this::toClienteData)
                 .collect(Collectors.toList());
+        log.info("Fin buscarDinamico - resultados={}", data.size());
         return construirLista(data);
     }
 
@@ -345,7 +352,7 @@ public class ClienteServiceImpl implements ClienteService {
             }
         }
         if (numero == null) {
-            throw new ValidacionException("No fue posible generar un numero de cuenta unico, intenta de nuevo");
+            throw new ValidacionException(MensajeError.CUENTA_NO_GENERADA);
         }
 
         Cuenta cuenta = new Cuenta();

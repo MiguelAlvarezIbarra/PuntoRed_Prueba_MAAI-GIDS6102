@@ -8,6 +8,7 @@ import com.proyecto.servicios.exception.gestopago.GestoPagoAuthenticationExcepti
 import com.proyecto.servicios.exception.gestopago.GestoPagoCommunicationException;
 import com.proyecto.servicios.exception.gestopago.GestoPagoResponseException;
 import com.proyecto.servicios.exception.gestopago.GestoPagoTimeoutException;
+import com.proyecto.servicios.model.ProductoData;
 import com.proyecto.servicios.repositorys.ProductoRepository;
 import feign.FeignException;
 import feign.RetryableException;
@@ -137,19 +138,24 @@ public class ProductoService {
 
         log.debug("JSON parseado desde el XML:\n{}", jsonResponse.toString(2));
 
-        if (!jsonResponse.has("RESPONSE") || !jsonResponse.getJSONObject("RESPONSE").has("PRODUCTOS")) {
+        if (!jsonResponse.has("RESPONSE")) {
             throw new GestoPagoResponseException(
                     "Estructura JSON inesperada al parsear el XML de GestoPago: " + jsonResponse, null);
         }
 
-        JSONObject productosObj = jsonResponse.getJSONObject("RESPONSE").getJSONObject("PRODUCTOS");
+        JSONObject responseObj = jsonResponse.getJSONObject("RESPONSE");
+        if (!responseObj.has("PRODUCTOS")) {
+            log.warn("Respuesta sin nodo PRODUCTOS. Posible respuesta vacía o sin productos: {}", jsonResponse);
+            return new ArrayList<>();
+        }
+
+        JSONObject productosObj = responseObj.getJSONObject("PRODUCTOS");
 
         Object productoNode = productosObj.opt("producto");
         if (productoNode == null) {
             log.warn("No se encontró la clave 'producto' dentro de PRODUCTOS. Claves disponibles: {}",
                     productosObj.keySet());
-            throw new GestoPagoResponseException(
-                    "No se encontró el nodo 'producto' esperado en la respuesta de GestoPago.", null);
+            return new ArrayList<>();
         }
 
         List<ProductoGestoPagoDTO> productos = new ArrayList<>();
@@ -186,7 +192,9 @@ public class ProductoService {
             nuevosProductos.add(producto);
         }
 
-        productoRepository.saveAll(nuevosProductos);
+        if (!nuevosProductos.isEmpty()) {
+            productoRepository.saveAll(nuevosProductos);
+        }
         return nuevosProductos.size();
     }
 
@@ -197,7 +205,7 @@ public class ProductoService {
      */
     public List<Producto> obtenerTodosLosProductos() {
         List<Producto> cacheados = productoCacheService.obtener();
-        if (cacheados != null) {
+        if (cacheados != null && !cacheados.isEmpty()) {
             log.debug("Productos obtenidos desde cache Redis.");
             return cacheados;
         }
@@ -207,5 +215,28 @@ public class ProductoService {
         productoCacheService.guardar(productos);
 
         return productos;
+    }
+
+    /**
+     * Version para la capa web: regresa DTOs en lugar de la entidad JPA.
+     */
+    public List<ProductoData> obtenerProductos() {
+        return obtenerTodosLosProductos().stream()
+                .map(this::toData)
+                .toList();
+    }
+
+    private ProductoData toData(Producto producto) {
+        ProductoData data = new ProductoData();
+        data.setIdProducto(producto.getIdProducto());
+        data.setIdServicio(producto.getIdServicio());
+        data.setIdCatTipoServicio(producto.getIdCatTipoServicio());
+        data.setNombreProducto(producto.getNombreProducto());
+        data.setNombreServicio(producto.getNombreServicio());
+        data.setTipoFront(producto.getTipoFront());
+        data.setTipoReferencia(producto.getTipoReferencia());
+        data.setPrecio(producto.getPrecio());
+        data.setFechaActualizacion(producto.getFechaActualizacion());
+        return data;
     }
 }

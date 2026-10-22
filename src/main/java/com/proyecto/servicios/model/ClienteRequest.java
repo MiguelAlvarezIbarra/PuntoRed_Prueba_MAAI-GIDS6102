@@ -1,5 +1,6 @@
 package com.proyecto.servicios.model;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
@@ -32,7 +33,7 @@ public class ClienteRequest {
 
     @NotNull(message = "Código 1: La fecha de nacimiento es obligatoria")
     @PastOrPresent(message = "Código 5: La fecha de nacimiento no puede ser una fecha futura")
-    @com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate fechaNacimiento;
 
     @NotBlank(message = "La CURP es obligatoria")
@@ -86,7 +87,7 @@ public class ClienteRequest {
     @NotNull(message = "Código 1: El ingreso mensual es obligatorio")
     @DecimalMin(value = "0.01", message = "Código 2: El ingreso mensual debe ser mayor a cero")
     @Digits(integer = 10, fraction = 2, message = "Código 6: Formato de dinero inválido (máximo 2 decimales)")
-    private java.math.BigDecimal ingresoMensual;
+    private BigDecimal ingresoMensual;
 
     // ---- Domicilio ----
     @NotNull(message = "El domicilio es obligatorio")

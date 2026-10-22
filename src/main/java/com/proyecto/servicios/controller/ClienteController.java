@@ -66,7 +66,7 @@ public class ClienteController {
     @PostMapping(value = "/search", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ListaClientesResponse> buscarDinamico(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestBody(required = false) ClienteSearchRequest request) {
+            @Valid @RequestBody(required = false) ClienteSearchRequest request) {
         return new ResponseEntity<>(clienteService.buscarDinamico(request, authorization), HttpStatus.OK);
     }
 }

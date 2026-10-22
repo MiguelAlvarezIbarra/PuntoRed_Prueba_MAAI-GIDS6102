@@ -2,7 +2,7 @@ package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.dto.response.ApiResponse;
 import com.proyecto.servicios.dto.response.ResponseCode;
-import com.proyecto.servicios.entity.Producto;
+import com.proyecto.servicios.model.ProductoData;
 import com.proyecto.servicios.service.ProductoService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -26,8 +26,8 @@ public class ProductoController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<Producto>>> getProductos() {
-        List<Producto> productos = productoService.obtenerTodosLosProductos();
+    public ResponseEntity<ApiResponse<List<ProductoData>>> getProductos() {
+        List<ProductoData> productos = productoService.obtenerProductos();
 
         if (productos.isEmpty()) {
             return ResponseEntity.ok(ApiResponse.error(ResponseCode.ERROR_SIN_DATOS));
