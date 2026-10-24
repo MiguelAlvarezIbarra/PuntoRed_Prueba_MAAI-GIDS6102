@@ -22,7 +22,7 @@ public class Usuario {
     @Column(name = "id")
     private Integer id;
 
-    @OneToOne(fetch = FetchType.LAZY)
+    @OneToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "cliente_id", nullable = false, unique = true, foreignKey = @ForeignKey(name = "fk_usuario_cliente"))
     private Cliente cliente;
 
@@ -57,6 +57,14 @@ public class Usuario {
     // Se actualiza en cada request autenticado; el scheduler la usa para expirar por inactividad
     @Column(name = "ultima_actividad")
     private LocalDateTime ultimaActividad;
+
+    // Hash SHA-256 del PIN de 6 digitos enviado por correo para 2FA
+    @Column(name = "pin_2fa_hash", columnDefinition = "TEXT")
+    private String pin2faHash;
+
+    // Fecha y hora de expiracion del PIN 2FA
+    @Column(name = "pin_2fa_expiracion")
+    private LocalDateTime pin2faExpiracion;
 
     @PrePersist
     public void prePersist() {

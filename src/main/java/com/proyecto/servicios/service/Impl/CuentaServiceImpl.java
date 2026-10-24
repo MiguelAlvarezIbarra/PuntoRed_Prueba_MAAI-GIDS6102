@@ -1,8 +1,11 @@
 package com.proyecto.servicios.service.Impl;
 
+import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Cuenta;
+import com.proyecto.servicios.exception.ClienteInactivoException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.MensajeError;
+import com.proyecto.servicios.model.CuentaAbonoRequest;
 import com.proyecto.servicios.model.CuentaData;
 import com.proyecto.servicios.model.CuentaResponse;
 import com.proyecto.servicios.model.ListaCuentasResponse;
@@ -12,14 +15,13 @@ import com.proyecto.servicios.service.CuentaService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j
-@Transactional(readOnly = true)
 public class CuentaServiceImpl implements CuentaService {
 
     @Autowired
@@ -62,6 +64,34 @@ public class CuentaServiceImpl implements CuentaService {
         response.setCodigo(0);
         response.setMensaje("Exito");
         log.info("Fin consultarSaldo - numeroCuenta={}", numeroCuenta);
+        return response;
+    }
+
+    @Override
+    public SaldoResponse abonarSaldo(CuentaAbonoRequest request) {
+        log.info("Inicio abonarSaldo - numeroCuenta={}", request.getNumeroCuenta());
+        Cuenta cuenta = cuentaRepository.findByNumeroCuenta(request.getNumeroCuenta())
+                .orElseThrow(() -> new CuentaNoEncontradaException(MensajeError.CUENTA_NO_ENCONTRADA));
+
+        Cliente cliente = cuenta.getCliente();
+        if (cliente == null || Boolean.FALSE.equals(cliente.getActivo()) || !"ACTIVA".equalsIgnoreCase(cuenta.getEstatus())) {
+            throw new ClienteInactivoException(MensajeError.CLIENTE_INACTIVO_MODIFICACION);
+        }
+
+        BigDecimal montoLimpio = request.getMonto().stripTrailingZeros();
+        if (montoLimpio.scale() < 0) {
+            montoLimpio = montoLimpio.setScale(0);
+        }
+
+        cuenta.setSaldo(cuenta.getSaldo().add(montoLimpio));
+        cuentaRepository.save(cuenta);
+
+        SaldoResponse response = new SaldoResponse();
+        response.setNumeroCuenta(cuenta.getNumeroCuenta());
+        response.setSaldo(cuenta.getSaldo());
+        response.setCodigo(0);
+        response.setMensaje("Abono realizado correctamente");
+        log.info("Fin abonarSaldo - numeroCuenta={}", request.getNumeroCuenta());
         return response;
     }
 

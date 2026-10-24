@@ -61,6 +61,33 @@ public class SeguridadGuard {
     }
 
     /**
+     * Si se envia el encabezado Authorization, valida que el token sea valido y que
+     * el cliente autenticado sea dueno del clienteId de la cuenta (o sea administrador).
+     */
+    public void validarAccesoClienteIdSiPresente(String authorizationHeader, Integer clienteIdObjetivo) {
+        if (authorizationHeader == null || authorizationHeader.isBlank()) {
+            return;
+        }
+        if (!authorizationHeader.startsWith(PREFIJO_BEARER)) {
+            throw new TokenFaltanteException(MensajeError.TOKEN_FALTANTE);
+        }
+        String token = authorizationHeader.substring(PREFIJO_BEARER.length());
+        try {
+            Integer rol = jwtUtil.obtenerRol(token);
+            Integer tokenClienteId = jwtUtil.obtenerClienteId(token);
+
+            if (rol != null && rol.equals(Roles.ADMIN)) {
+                return;
+            }
+            if (clienteIdObjetivo != null && !clienteIdObjetivo.equals(tokenClienteId)) {
+                throw new AccesoDenegadoException(MensajeError.ACCESO_DENEGADO);
+            }
+        } catch (JwtException e) {
+            throw new TokenFaltanteException(MensajeError.TOKEN_INVALIDO);
+        }
+    }
+
+    /**
      * Extrae la informacion del token si esta presente.
      * Retorna null si no se envio encabezado de autorizacion.
      */

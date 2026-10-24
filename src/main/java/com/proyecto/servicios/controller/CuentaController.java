@@ -1,5 +1,6 @@
 package com.proyecto.servicios.controller;
 
+import com.proyecto.servicios.model.CuentaAbonoRequest;
 import com.proyecto.servicios.model.CuentaConsultaRequest;
 import com.proyecto.servicios.model.CuentaResponse;
 import com.proyecto.servicios.model.ListaCuentasResponse;
@@ -32,5 +33,10 @@ public class CuentaController {
     @PostMapping(value = "/saldo", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<SaldoResponse> consultarSaldo(@Valid @RequestBody CuentaConsultaRequest request) {
         return new ResponseEntity<>(cuentaService.consultarSaldo(request.getNumeroCuenta()), HttpStatus.OK);
+    }
+
+    @PostMapping(value = "/abonar", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<SaldoResponse> abonarSaldo(@Valid @RequestBody CuentaAbonoRequest request) {
+        return new ResponseEntity<>(cuentaService.abonarSaldo(request), HttpStatus.OK);
     }
 }

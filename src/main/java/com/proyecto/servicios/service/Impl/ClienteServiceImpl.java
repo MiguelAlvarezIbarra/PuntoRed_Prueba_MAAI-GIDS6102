@@ -23,6 +23,8 @@ import com.proyecto.servicios.model.ClienteSearchRequest;
 import com.proyecto.servicios.model.DomicilioRequest;
 import com.proyecto.servicios.model.GenericResponse;
 import com.proyecto.servicios.model.ListaClientesResponse;
+import com.proyecto.servicios.repositorys.sf.CatNacionalidadRepository;
+import com.proyecto.servicios.repositorys.sf.CatPaisRepository;
 import com.proyecto.servicios.repositorys.sf.ClienteRepository;
 import com.proyecto.servicios.repositorys.sf.ClienteSpecification;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
@@ -36,7 +38,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -46,7 +47,6 @@ import java.util.stream.Collectors;
 
 @Service
 @Slf4j
-@Transactional(readOnly = true)
 public class ClienteServiceImpl implements ClienteService {
 
     @Autowired
@@ -57,6 +57,12 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Autowired
     private CuentaRepository cuentaRepository;
+
+    @Autowired
+    private CatPaisRepository catPaisRepository;
+
+    @Autowired
+    private CatNacionalidadRepository catNacionalidadRepository;
 
     @Autowired
     private UsuarioService usuarioService;
@@ -74,14 +80,12 @@ public class ClienteServiceImpl implements ClienteService {
     private static final int INTENTOS_MAX_NUMERO_CUENTA = 20;
 
     @Override
-    @Transactional
     public ClienteResponse creaCliente(ClienteRequest request) {
         // Registro publico: SIEMPRE rol de usuario normal, sin excepcion.
         return creaClienteInterno(request, Roles.USUARIO_NORMAL);
     }
 
     @Override
-    @Transactional
     public ClienteResponse creaClienteConRol(ClienteRequest request, Integer rol) {
         // Usado solo por el endpoint de administrador (ya protegido con AdminGuard).
         if (rol == null || (rol != Roles.ADMIN && rol != Roles.USUARIO_NORMAL)) {
@@ -115,7 +119,6 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     @Override
-    @Transactional
     public ClienteResponse actualizaCliente(ClienteActualizaRequest request) {
         String rfc = request.getRfc();
         log.info("Inicio actualizaCliente - rfc={}", rfc);
@@ -169,7 +172,6 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     @Override
-    @Transactional
     public GenericResponse eliminaCliente(ClienteBajaRequest request) {
         String rfc = request.getRfc();
         log.info("Inicio eliminaCliente (baja logica) - rfc={}", rfc);
@@ -183,9 +185,12 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.setActivo(false);
         clienteRepository.save(cliente);
 
-        // Operacion masiva y comprobacion booleana sin ciclos iterativos lentos
         if (cuentaRepository.existsByCliente_IdAndEstatus(cliente.getId(), "ACTIVA")) {
-            cuentaRepository.actualizarEstatusPorClienteId(cliente.getId(), "INACTIVA");
+            List<Cuenta> cuentas = cuentaRepository.findByCliente_Id(cliente.getId());
+            for (Cuenta cuenta : cuentas) {
+                cuenta.setEstatus("INACTIVA");
+            }
+            cuentaRepository.saveAll(cuentas);
         }
 
         GenericResponse response = new GenericResponse();
@@ -196,7 +201,6 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     @Override
-    @Transactional
     public GenericResponse reactivarCliente(ClienteReactivarRequest request) {
         String rfc = request.getRfc();
         log.info("Inicio reactivarCliente - rfc={}", rfc);
@@ -210,9 +214,12 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.setActivo(true);
         clienteRepository.save(cliente);
 
-        // Operacion masiva y comprobacion booleana sin ciclos iterativos lentos
         if (cuentaRepository.existsByCliente_IdAndEstatus(cliente.getId(), "INACTIVA")) {
-            cuentaRepository.actualizarEstatusPorClienteId(cliente.getId(), "ACTIVA");
+            List<Cuenta> cuentas = cuentaRepository.findByCliente_Id(cliente.getId());
+            for (Cuenta cuenta : cuentas) {
+                cuenta.setEstatus("ACTIVA");
+            }
+            cuentaRepository.saveAll(cuentas);
         }
 
         GenericResponse response = new GenericResponse();
@@ -227,17 +234,14 @@ public class ClienteServiceImpl implements ClienteService {
         log.info("Inicio buscarDinamico");
         InfoToken infoToken = seguridadGuard.extraerInfoToken(authorizationHeader);
         if (infoToken == null) {
-            // Sin token no hay forma de aplicar la restriccion por recurso: se rechaza.
             throw new TokenFaltanteException(MensajeError.TOKEN_FALTANTE);
         }
 
         Integer clienteIdRestringido = null;
         if (!infoToken.esAdmin()) {
-            // Usuario normal: unicamente puede consultar su propia informacion
             clienteIdRestringido = infoToken.getClienteId();
         }
 
-        // Si no es admin y no se solicito explicitamente un estatus activo, por seguridad solo devolvemos clientes activos
         if (request != null && request.getActivo() == null && !infoToken.esAdmin()) {
             request.setActivo(true);
         }
@@ -258,22 +262,22 @@ public class ClienteServiceImpl implements ClienteService {
     private void validarCatalogos(ClienteRequest request) {
         ValidadorRfcCurp.validar(request);
 
-        if (!clienteRepository.existsByNacionalidad(request.getNacionalidad())) {
+        if (!catNacionalidadRepository.existsByNombre(request.getNacionalidad())) {
             throw new ValidacionException(MensajeError.CATALOGO_NACIONALIDAD_INVALIDA);
         }
         if (request.getDomicilio() != null && request.getDomicilio().getPais() != null) {
-            if (!clienteRepository.existsByPais(request.getDomicilio().getPais())) {
+            if (!catPaisRepository.existsByNombre(request.getDomicilio().getPais())) {
                 throw new ValidacionException(MensajeError.CATALOGO_PAIS_INVALIDO);
             }
         }
     }
 
     private void validarCatalogosActualiza(ClienteActualizaRequest request) {
-        if (!clienteRepository.existsByNacionalidad(request.getNacionalidad())) {
+        if (!catNacionalidadRepository.existsByNombre(request.getNacionalidad())) {
             throw new ValidacionException(MensajeError.CATALOGO_NACIONALIDAD_INVALIDA);
         }
         if (request.getDomicilio() != null && request.getDomicilio().getPais() != null) {
-            if (!clienteRepository.existsByPais(request.getDomicilio().getPais())) {
+            if (!catPaisRepository.existsByNombre(request.getDomicilio().getPais())) {
                 throw new ValidacionException(MensajeError.CATALOGO_PAIS_INVALIDO);
             }
         }

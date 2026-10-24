@@ -211,7 +211,7 @@ public class ProductoService {
         }
 
         log.debug("Cache Redis no disponible o vacío. Consultando Postgres...");
-        List<Producto> productos = productoRepository.findAllOrdenadosPorTipoFront();
+        List<Producto> productos = productoRepository.findAllByOrderByTipoFrontAsc();
         productoCacheService.guardar(productos);
 
         return productos;
