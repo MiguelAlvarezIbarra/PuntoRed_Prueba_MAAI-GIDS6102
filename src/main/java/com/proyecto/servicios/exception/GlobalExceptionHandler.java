@@ -167,6 +167,12 @@ public class GlobalExceptionHandler {
         return construir(MensajeError.CLIENTE_INACTIVO_MODIFICACION.getCodigo(), ex.getMessage(), HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(SaldoInsuficienteException.class)
+    public ResponseEntity<GenericResponse> handleSaldoInsuficiente(SaldoInsuficienteException ex) {
+        log.warn("Saldo insuficiente: {}", ex.getMessage());
+        return construir(MensajeError.SALDO_INSUFICIENTE.getCodigo(), ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(TokenFaltanteException.class)
     public ResponseEntity<GenericResponse> handleTokenFaltante(TokenFaltanteException ex) {
         log.warn("Token faltante o invalido: {}", ex.getMessage());

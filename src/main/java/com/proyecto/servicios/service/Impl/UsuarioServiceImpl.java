@@ -20,7 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -46,7 +45,6 @@ public class UsuarioServiceImpl implements UsuarioService {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
-    @Transactional
     public void crearUsuarioParaCliente(Cliente cliente, String passwordPlano, Integer rol) {
         Usuario usuario = new Usuario();
         usuario.setCliente(cliente);
@@ -60,7 +58,6 @@ public class UsuarioServiceImpl implements UsuarioService {
     }
 
     @Override
-    @Transactional
     public LoginResponse login(LoginRequest request) {
         log.info("Intento de login - correoHash calculado");
         String correoHash = hashUtil.sha256(request.getCorreo());
@@ -94,7 +91,6 @@ public class UsuarioServiceImpl implements UsuarioService {
     }
 
     @Override
-    @Transactional
     public GenericResponse logout(String token) {
         GenericResponse response = new GenericResponse();
         try {
@@ -115,7 +111,6 @@ public class UsuarioServiceImpl implements UsuarioService {
     }
 
     @Override
-    @Transactional
     public void registrarActividad(Integer clienteId) {
         usuarioRepository.findByCliente_Id(clienteId).ifPresent(usuario -> {
             if (Boolean.TRUE.equals(usuario.getSesionActiva())) {

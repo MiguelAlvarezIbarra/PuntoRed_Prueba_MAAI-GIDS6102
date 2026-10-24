@@ -25,6 +25,8 @@ public enum MensajeError {
     CURP_NO_COINCIDE(1, "Las primeras 10 posiciones de la CURP (%s) no coinciden con los datos del cliente. Deberían ser: %s"),
     SEXO_CURP_NO_COINCIDE(1, "El sexo en la CURP (%s) no coincide con el sexo del cliente (%s)."),
     DATOS_NO_VALIDOS(1, "Datos no validos"),
+    TELEFONO_RECARGA_OBLIGATORIO(1, "Código 1: El número de teléfono (10 dígitos) es obligatorio cuando el tipo de pago es TELEFONO (Recarga)"),
+    REFERENCIA_PAGO_OBLIGATORIA(1, "Código 1: La referencia es obligatoria cuando el tipo de pago es REFERENCIA (Pago Bancario)"),
 
     // Formatos de entrada (mismos codigos que ya usaban los DTOs: 5 fecha, 6 numerico)
     FORMATO_FECHA_INVALIDO(5, "Formato de Fecha Incorrecta"),
@@ -53,20 +55,30 @@ public enum MensajeError {
     ACCESO_DENEGADO(10, "No tienes permisos para acceder o modificar los datos de este cliente"),
     ACCESO_DENEGADO_ADMIN(10, "Esta operacion solo puede realizarla un administrador"),
 
-    // Reglas de negocio para estatus de cliente (Código 11)
+    // Reglas de negocio para estatus de cliente y cuenta (Código 11)
     CLIENTE_INACTIVO_MODIFICACION(11, "El cliente se encuentra dado de baja y no puede ser modificado"),
     CLIENTE_YA_INACTIVO(11, "El cliente ya se encuentra dado de baja"),
+    CLIENTE_INACTIVO_COMPRA(11, "Código 11: El cliente se encuentra dado de baja y no puede realizar compras ni iniciar sesión"),
+    CUENTA_INACTIVA_COMPRA(11, "Código 11: La cuenta se encuentra inactiva y no puede realizar compras"),
 
     // Errores a nivel HTTP (Códigos 12 a 14)
     RECURSO_NO_ENCONTRADO(12, "El recurso solicitado no existe"),
     METODO_NO_PERMITIDO(13, "El metodo HTTP no esta permitido para este recurso"),
     TIPO_CONTENIDO_NO_SOPORTADO(14, "Tipo de contenido no soportado, envia la peticion como application/json"),
 
-    // Integracion con GestoPago (Códigos 20 a 23)
+    // Pagos, Saldo y 2FA (Códigos 15 a 17)
+    SALDO_INSUFICIENTE(15, "Código 15: Saldo insuficiente en la cuenta para realizar el pago"),
+    PIN_2FA_NO_SOLICITADO(16, "Código 16: No existe un PIN 2FA activo para este cliente. Solicite primero el envío del PIN al correo"),
+    PIN_2FA_EXPIRADO(16, "Código 16: El PIN de autenticación 2FA ha expirado. Solicite uno nuevo"),
+    PIN_2FA_INVALIDO(16, "Código 16: El PIN de autenticación 2FA es incorrecto"),
+    SENTX_CIFRADO_INVALIDO(17, "Código 17: No se pudo verificar el cifrado de la petición SenTx con el token"),
+
+    // Integracion con GestoPago (Códigos 20 a 24)
     GESTOPAGO_AUTENTICACION(20, "No se pudo autenticar con el proveedor de productos"),
     GESTOPAGO_TIMEOUT(21, "Tiempo de espera agotado al comunicarse con el proveedor de productos"),
     GESTOPAGO_COMUNICACION(22, "Error de comunicacion con el proveedor de productos"),
     GESTOPAGO_RESPUESTA(23, "El proveedor de productos respondio con un error"),
+    GESTOPAGO_PAGO_RECHAZADO(24, "Código %s: %s"),
 
     // Error interno del servidor (Código 99)
     ERROR_INTERNO(99, "Ocurrio un error inesperado, intenta de nuevo mas tarde");

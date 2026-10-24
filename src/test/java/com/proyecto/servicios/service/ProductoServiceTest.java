@@ -102,7 +102,7 @@ class ProductoServiceTest {
     @Test
     void obtenerTodosLosProductos_retornaListaDesdeRepositorio() {
         Producto p = Producto.builder().idProducto(1).idServicio(1).nombreProducto("Test").nombreServicio("Test").build();
-        when(productoRepository.findAllOrdenadosPorTipoFront()).thenReturn(List.of(p));
+        when(productoRepository.findAllByOrderByTipoFrontAsc()).thenReturn(List.of(p));
 
         List<Producto> resultado = productoService.obtenerTodosLosProductos();
 

@@ -14,7 +14,7 @@ import lombok.Setter;
 @NoArgsConstructor
 public class CuentaConsultaRequest {
 
-    @NotBlank(message = "El numero de cuenta es obligatorio")
-    @Pattern(regexp = "^\\d{10}$", message = "El numero de cuenta debe contener exactamente 10 digitos")
+    @NotBlank(message = "Código 1: El número de cuenta es obligatorio")
+    @Pattern(regexp = "^\\d{18}$", message = "Código 4: El número de cuenta debe contener exactamente 18 dígitos numéricos")
     private String numeroCuenta;
 }

@@ -20,4 +20,9 @@ public class ValidacionException extends RuntimeException {
         super(error.getMensaje());
         this.codigo = error.getCodigo();
     }
+
+    public ValidacionException(Integer codigo, String mensaje) {
+        super(mensaje);
+        this.codigo = codigo;
+    }
 }
