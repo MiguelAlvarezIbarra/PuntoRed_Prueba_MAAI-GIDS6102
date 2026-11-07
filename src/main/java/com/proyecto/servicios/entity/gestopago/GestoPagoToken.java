@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "gestopago_tokens")
@@ -42,12 +43,13 @@ public class GestoPagoToken {
 
     @PrePersist
     void onCreate() {
-        fechaCreacion = LocalDateTime.now();
-        fechaActualizacion = LocalDateTime.now();
+        LocalDateTime ahora = LocalDateTime.now(ZoneId.systemDefault());
+        fechaCreacion = ahora;
+        fechaActualizacion = ahora;
     }
 
     @PreUpdate
     void onUpdate() {
-        fechaActualizacion = LocalDateTime.now();
+        fechaActualizacion = LocalDateTime.now(ZoneId.systemDefault());
     }
 }

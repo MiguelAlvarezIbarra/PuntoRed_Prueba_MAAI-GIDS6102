@@ -2,10 +2,8 @@ package com.proyecto.servicios.service.Impl;
 
 import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
-import com.proyecto.servicios.exception.gestopago.GestoPagoAuthenticationException;
-import com.proyecto.servicios.exception.gestopago.GestoPagoCommunicationException;
-import com.proyecto.servicios.exception.gestopago.GestoPagoResponseException;
-import com.proyecto.servicios.exception.gestopago.GestoPagoTimeoutException;
+import com.proyecto.servicios.exception.MensajeError;
+import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
 import com.proyecto.servicios.service.GestoPagoTokenService;
 import feign.FeignException;
@@ -53,33 +51,9 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
                             "(gestopago.auth.id-distribuidor / codigo-dispositivo / password). Revísalas.");
         }
 
-        String rawResponse;
-        try {
-            rawResponse = gestoPagoAuthClient.authenticate(idDistribuidor, codigoDispositivo, password);
-        } catch (RetryableException e) {
-            // No se loguea e.getMessage(): la URL de Feign incluye el password como query param.
-            log.error("Fallo de red al llamar authenticate de GestoPago: {}", e.getClass().getSimpleName());
-            if (e.getCause() instanceof SocketTimeoutException) {
-                throw new GestoPagoTimeoutException("Timeout al llamar authenticate de GestoPago");
-            }
-            throw new GestoPagoCommunicationException("Error de comunicacion al llamar authenticate de GestoPago");
-        } catch (FeignException e) {
-            log.error("GestoPago respondio HTTP {} en authenticate", e.status());
-            throw new GestoPagoAuthenticationException("GestoPago rechazo authenticate con HTTP " + e.status());
-        }
+        String rawResponse = invocarAutenticacion();
+        JSONObject json = parsearRespuestaJson(rawResponse);
 
-        if (rawResponse == null || rawResponse.isBlank()) {
-            throw new GestoPagoResponseException("GestoPago regreso una respuesta vacia al autenticar.", null);
-        }
-
-        JSONObject json;
-        try {
-            json = new JSONObject(rawResponse);
-        } catch (Exception e) {
-            throw new GestoPagoResponseException("La respuesta de authenticate no es JSON valido.", null);
-        }
-
-        // Solo se registran las claves, nunca el valor del token.
         log.debug("Claves recibidas en la respuesta de authenticate: {}", json.keySet());
 
         String token = json.optString("token", null);
@@ -88,7 +62,8 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
 
         if (!success || !pareceValido) {
             String motivo = json.optString("message", "sin motivo informado");
-            throw new GestoPagoAuthenticationException("GestoPago rechazo la autenticacion. Motivo: " + motivo);
+            throw new ValidacionException(MensajeError.GESTOPAGO_AUTENTICACION,
+                    "GestoPago rechazo la autenticacion. Motivo: " + motivo);
         }
 
         GestoPagoToken tokenEntity = tokenRepository
@@ -98,22 +73,48 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
         tokenEntity.setIdDistribuidor(idDistribuidor);
         tokenEntity.setCodigoDispositivo(codigoDispositivo);
         tokenEntity.setToken(token);
-        tokenEntity.setTokenType(json.optString("token_type", null));
-        if (json.has("expires_in")) {
-            tokenEntity.setExpiresIn(json.optLong("expires_in"));
-        }
         tokenEntity.setActivo(true);
 
         tokenRepository.save(tokenEntity);
-        log.info("Token GestoPago renovado correctamente");
+        log.info("Fin renovarToken GestoPago - token actualizado correctamente (id={})", tokenEntity.getId());
+    }
+
+    private String invocarAutenticacion() {
+        try {
+            return gestoPagoAuthClient.authenticate(idDistribuidor, codigoDispositivo, password);
+        } catch (RetryableException e) {
+            log.error("Fallo de red al llamar authenticate de GestoPago: {}", e.getClass().getSimpleName());
+            if (e.getCause() instanceof SocketTimeoutException) {
+                throw new ValidacionException(MensajeError.GESTOPAGO_TIMEOUT,
+                        "Timeout al llamar authenticate de GestoPago", e);
+            }
+            throw new ValidacionException(MensajeError.GESTOPAGO_COMUNICACION,
+                    "Error de comunicacion al llamar authenticate de GestoPago", e);
+        } catch (FeignException e) {
+            log.error("GestoPago respondio HTTP {} en authenticate", e.status());
+            throw new ValidacionException(MensajeError.GESTOPAGO_AUTENTICACION,
+                    "GestoPago rechazo authenticate con HTTP " + e.status(), e);
+        }
+    }
+
+    private JSONObject parsearRespuestaJson(String rawResponse) {
+        if (rawResponse == null || rawResponse.isBlank()) {
+            throw new ValidacionException(MensajeError.GESTOPAGO_RESPUESTA,
+                    "GestoPago regreso una respuesta vacia al autenticar.");
+        }
+        try {
+            return new JSONObject(rawResponse);
+        } catch (Exception e) {
+            throw new ValidacionException(MensajeError.GESTOPAGO_RESPUESTA,
+                    "La respuesta de authenticate no es JSON valido.", e);
+        }
     }
 
     @Override
-    public Optional<GestoPagoToken> obtenerTokenActivo(Integer idDistribuidor, String codigoDispositivo) {
-        return tokenRepository.findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo)
-                .filter(t -> t.getToken() != null
-                        && !t.getToken().isBlank()
-                        && !"INVALID".equalsIgnoreCase(t.getToken()));
+    public Optional<GestoPagoToken> obtenerTokenActivo(Integer idDistribuidorParam, String codigoDispositivoParam) {
+        return tokenRepository
+                .findByIdDistribuidorAndCodigoDispositivo(idDistribuidorParam, codigoDispositivoParam)
+                .filter(t -> Boolean.TRUE.equals(t.getActivo()));
     }
 
     @Override

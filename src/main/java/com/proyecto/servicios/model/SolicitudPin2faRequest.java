@@ -12,6 +12,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @NoArgsConstructor
+@PagoModelValido
 public class SolicitudPin2faRequest {
 
     @NotBlank(message = "Código 1: El número de cuenta es obligatorio")

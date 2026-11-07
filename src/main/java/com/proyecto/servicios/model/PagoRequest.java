@@ -1,5 +1,7 @@
 package com.proyecto.servicios.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
@@ -14,17 +16,21 @@ import java.math.BigDecimal;
 
 /**
  * DTO de entrada para realizar un pago o recarga mediante GestoPago (sendTx.do).
- * Incluye validaciones estrictas de formato para todos los campos:
- * - numeroCuenta de exactamente 18 digitos.
+ * Incluye validaciones estrictas de formato y negocio desde el propio modelo:
+ * - numeroCuenta de exactamente 18 digitos (activa y de cliente activo).
  * - idServicio e idProducto positivos.
- * - monto con maximo 2 decimales y mayor a cero.
+ * - monto con maximo 2 decimales, mayor a cero y con saldo suficiente.
  * - bandera tipoPago: TELEFONO (Recarga) o REFERENCIA (Pago Bancario).
- * - pin2fa de 6 digitos enviado al correo del cliente.
+ * - pin2fa de 6 digitos enviado al correo del cliente y vigente.
  */
 @Getter
 @Setter
 @NoArgsConstructor
+@PagoModelValido
 public class PagoRequest {
+
+    public static final String TIPO_TELEFONO = "TELEFONO";
+    public static final String TIPO_REFERENCIA = "REFERENCIA";
 
     @NotBlank(message = "Código 1: El número de cuenta es obligatorio")
     @Pattern(regexp = "^\\d{18}$", message = "Código 4: El número de cuenta debe contener exactamente 18 dígitos numéricos")
@@ -64,7 +70,7 @@ public class PagoRequest {
     private String pin2fa;
 
     @Pattern(
-            regexp = "^[A-Za-z0-9_]{1,20}$",
+            regexp = "^\\w{1,20}$",
             message = "Código 4: El UPC solo permite letras y números sin caracteres especiales"
     )
     private String upc;
@@ -74,4 +80,43 @@ public class PagoRequest {
             message = "Código 4: La unidad solo permite dígitos numéricos"
     )
     private String unidad;
+
+    @JsonIgnore
+    @AssertTrue(message = "Código 1: El número de teléfono (10 dígitos) es obligatorio cuando el tipo de pago es TELEFONO (Recarga)")
+    public boolean isTelefonoValidoParaRecarga() {
+        return !TIPO_TELEFONO.equals(tipoPago) || (telefono != null && !telefono.isBlank());
+    }
+
+    @JsonIgnore
+    @AssertTrue(message = "Código 1: La referencia es obligatoria cuando el tipo de pago es REFERENCIA (Pago Bancario)")
+    public boolean isReferenciaValidaParaPago() {
+        return !TIPO_REFERENCIA.equals(tipoPago) || (referencia != null && !referencia.isBlank());
+    }
+
+    public String obtenerDestinoPago() {
+        if (TIPO_TELEFONO.equals(tipoPago)) {
+            return telefono != null ? telefono.trim() : "";
+        }
+        return referencia != null ? referencia.trim() : "";
+    }
+
+    public String obtenerTelefonoSenTx() {
+        return TIPO_TELEFONO.equals(tipoPago) ? obtenerDestinoPago() : "";
+    }
+
+    public BigDecimal obtenerMontoLimpio() {
+        if (monto == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal limpio = monto.stripTrailingZeros();
+        return limpio.scale() < 0 ? limpio.setScale(0) : limpio;
+    }
+
+    public String obtenerUpcEfectivo(String upcDefault) {
+        return (upc != null && !upc.isBlank()) ? upc : upcDefault;
+    }
+
+    public String obtenerUnidadEfectiva(Integer idDistribuidor) {
+        return (unidad != null && !unidad.isBlank()) ? unidad : String.valueOf(idDistribuidor);
+    }
 }

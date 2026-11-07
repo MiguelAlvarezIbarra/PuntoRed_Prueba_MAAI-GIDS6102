@@ -113,6 +113,13 @@ jacocoTestReport {
     reports {
         xml.required = true
     }
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/App.class'
+            ])
+        }))
+    }
 }
 
 //ejecutar applicación dentro de contenedor

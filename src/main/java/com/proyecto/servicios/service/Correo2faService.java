@@ -1,24 +1,34 @@
 package com.proyecto.servicios.service;
 
+import com.proyecto.servicios.util.HashUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 /**
- * Servicio encargado de enviar el PIN de autenticacion 2FA al correo electronico del cliente.
+ * Servicio encargado de hashear y enviar el PIN de autenticacion 2FA al correo electronico del cliente.
  */
 @Service
 @Slf4j
 public class Correo2faService {
 
-    @Autowired(required = false)
-    private JavaMailSender mailSender;
+    private final JavaMailSender mailSender;
+    private final HashUtil hashUtil;
 
     @Value("${spring.mail.username:}")
     private String remitente;
+
+    public Correo2faService(ObjectProvider<JavaMailSender> mailSenderProvider, HashUtil hashUtil) {
+        this.mailSender = mailSenderProvider.getIfAvailable();
+        this.hashUtil = hashUtil;
+    }
+
+    public String hashearPin(String pin) {
+        return hashUtil.sha256(pin);
+    }
 
     public boolean enviarPinPorCorreo(String correoDestino, String nombreCliente, String pin) {
         if (mailSender == null || remitente == null || remitente.isBlank()) {

@@ -7,7 +7,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -26,7 +25,6 @@ import java.math.BigDecimal;
  */
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class SenTxRequest {
@@ -56,7 +54,7 @@ public class SenTxRequest {
     private BigDecimal montoPago;
 
     @NotBlank(message = "Código 1: El UPC de SenTx es obligatorio")
-    @Pattern(regexp = "^[A-Za-z0-9_]{1,20}$", message = "Código 4: El UPC de SenTx no permite caracteres especiales")
+    @Pattern(regexp = "^\\w{1,20}$", message = "Código 4: El UPC de SenTx no permite caracteres especiales")
     private String upc;
 
     @NotBlank(message = "Código 1: La unidad de SenTx es obligatoria")
