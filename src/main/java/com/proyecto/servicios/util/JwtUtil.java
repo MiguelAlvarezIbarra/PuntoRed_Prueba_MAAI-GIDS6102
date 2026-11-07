@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
 
@@ -32,15 +33,15 @@ public class JwtUtil {
     }
 
     public String generar(Integer clienteId, String correoHash, Integer rol) {
-        Date ahora = new Date();
-        Date expira = new Date(ahora.getTime() + expiracionMinutos * 60_000);
+        Instant ahora = Instant.now();
+        Instant expira = ahora.plusSeconds(expiracionMinutos * 60);
 
         return Jwts.builder()
                 .subject(String.valueOf(clienteId))
                 .claim("correoHash", correoHash)
                 .claim("rol", rol)
-                .issuedAt(ahora)
-                .expiration(expira)
+                .issuedAt(Date.from(ahora))
+                .expiration(Date.from(expira))
                 .signWith(llave)
                 .compact();
     }

@@ -8,33 +8,33 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Cipher;
-import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Objects;
 
 /**
  * Cifra y verifica las peticiones SenTx (sendTx.do) de GestoPago.
- * GestoPago requiere el JSON de la transaccion cifrado con AES/CBC/PKCS5Padding
- * en Base64 dentro del parametro 'signed', autenticado con el Bearer Token.
+ * Utiliza AES/GCM/NoPadding con IV aleatorio por operacion en Base64
+ * dentro del parametro 'signed', autenticado con el Bearer Token.
  */
 @Component
 public class GestoPagoCryptoUtil {
 
-    private static final String ALGORITMO_GESTOPAGO = "AES/CBC/PKCS5Padding";
+    private static final String ALGORITMO_GESTOPAGO = "AES/GCM/NoPadding";
+    private static final int TAMANO_TAG_BITS = 128;
+    private static final int TAMANO_IV_BYTES = 12;
 
     private final SecretKeySpec secretKey;
-    private final IvParameterSpec ivSpec;
+    private final SecureRandom random = new SecureRandom();
 
     public GestoPagoCryptoUtil(
-            @Value("${gestopago.tx.aes-key:HPo7OLqB4Fkk4E2yGOtwqw8H5fHR9kNx67OR4g4UdlA=}") String keyBase64,
-            @Value("${gestopago.tx.aes-iv:p5ldmBPdd/9pjC0bDC/nSg==}") String ivBase64) {
+            @Value("${gestopago.tx.aes-key:HPo7OLqB4Fkk4E2yGOtwqw8H5fHR9kNx67OR4g4UdlA=}") String keyBase64) {
         byte[] keyBytes = Base64.getDecoder().decode(keyBase64.trim());
-        byte[] ivBytes = Base64.getDecoder().decode(ivBase64.trim());
         this.secretKey = new SecretKeySpec(keyBytes, "AES");
-        this.ivSpec = new IvParameterSpec(ivBytes);
     }
 
     /**
@@ -60,10 +60,18 @@ public class GestoPagoCryptoUtil {
 
     public String cifrarTexto(String jsonPlano) {
         try {
+            byte[] iv = new byte[TAMANO_IV_BYTES];
+            random.nextBytes(iv);
+
             Cipher cipher = Cipher.getInstance(ALGORITMO_GESTOPAGO);
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec);
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(TAMANO_TAG_BITS, iv));
             byte[] encrypted = cipher.doFinal(jsonPlano.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(encrypted);
+
+            byte[] resultado = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, resultado, 0, iv.length);
+            System.arraycopy(encrypted, 0, resultado, iv.length, encrypted.length);
+
+            return Base64.getEncoder().encodeToString(resultado);
         } catch (Exception e) {
             throw new IllegalStateException("No fue posible cifrar la peticion SenTx de GestoPago", e);
         }
@@ -71,10 +79,15 @@ public class GestoPagoCryptoUtil {
 
     public String descifrarTexto(String signedBase64) {
         try {
-            Cipher cipher = Cipher.getInstance(ALGORITMO_GESTOPAGO);
-            cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
             byte[] decoded = Base64.getDecoder().decode(signedBase64);
-            byte[] decrypted = cipher.doFinal(decoded);
+            byte[] iv = new byte[TAMANO_IV_BYTES];
+            byte[] encrypted = new byte[decoded.length - TAMANO_IV_BYTES];
+            System.arraycopy(decoded, 0, iv, 0, TAMANO_IV_BYTES);
+            System.arraycopy(decoded, TAMANO_IV_BYTES, encrypted, 0, encrypted.length);
+
+            Cipher cipher = Cipher.getInstance(ALGORITMO_GESTOPAGO);
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(TAMANO_TAG_BITS, iv));
+            byte[] decrypted = cipher.doFinal(encrypted);
             return new String(decrypted, StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new ValidacionException(MensajeError.SENTX_CIFRADO_INVALIDO);

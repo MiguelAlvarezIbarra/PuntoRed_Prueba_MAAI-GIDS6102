@@ -7,6 +7,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Table(name = "clientes")
 @Entity
@@ -80,7 +81,7 @@ public class Cliente {
     @PrePersist
     public void prePersist() {
         if (fechaRegistro == null) {
-            fechaRegistro = LocalDateTime.now();
+            fechaRegistro = LocalDateTime.now(ZoneId.systemDefault());
         }
         if (activo == null) {
             activo = true;

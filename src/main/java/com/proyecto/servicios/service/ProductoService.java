@@ -4,10 +4,8 @@ import com.proyecto.servicios.client.GestoPagoServiceClient;
 import com.proyecto.servicios.dto.gestopago.ProductoGestoPagoDTO;
 import com.proyecto.servicios.entity.Producto;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
-import com.proyecto.servicios.exception.gestopago.GestoPagoAuthenticationException;
-import com.proyecto.servicios.exception.gestopago.GestoPagoCommunicationException;
-import com.proyecto.servicios.exception.gestopago.GestoPagoResponseException;
-import com.proyecto.servicios.exception.gestopago.GestoPagoTimeoutException;
+import com.proyecto.servicios.exception.MensajeError;
+import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.ProductoData;
 import com.proyecto.servicios.repositorys.ProductoRepository;
 import feign.FeignException;
@@ -23,6 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.net.SocketTimeoutException;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -94,18 +93,19 @@ public class ProductoService {
             try {
                 return gestoPagoServiceClient.getProductList("Bearer " + nuevoToken);
             } catch (FeignException.Unauthorized | FeignException.Forbidden e2) {
-                throw new GestoPagoAuthenticationException(
+                throw new ValidacionException(MensajeError.GESTOPAGO_AUTENTICACION,
                         "GestoPago rechazó la autenticación incluso después de renovar el token", e2);
             }
         } catch (RetryableException e) {
             if (e.getCause() instanceof SocketTimeoutException) {
-                throw new GestoPagoTimeoutException("Timeout al llamar a getProductList.do en GestoPago", e);
+                throw new ValidacionException(MensajeError.GESTOPAGO_TIMEOUT,
+                        "Timeout al llamar a getProductList.do en GestoPago", e);
             }
-            throw new GestoPagoCommunicationException("Error de comunicación con GestoPago (getProductList.do)", e);
+            throw new ValidacionException(MensajeError.GESTOPAGO_COMUNICACION,
+                    "Error de comunicación con GestoPago (getProductList.do)", e);
         } catch (FeignException e) {
-            throw new GestoPagoResponseException(
-                    "GestoPago respondió con un error al pedir la lista de productos: " + e.getMessage(),
-                    e.status(), e);
+            throw new ValidacionException(MensajeError.GESTOPAGO_RESPUESTA,
+                    "GestoPago respondió con un error al pedir la lista de productos: " + e.getMessage(), e);
         }
     }
 
@@ -118,7 +118,7 @@ public class ProductoService {
         }
         return tokenOpt
                 .map(GestoPagoToken::getToken)
-                .orElseThrow(() -> new GestoPagoAuthenticationException(
+                .orElseThrow(() -> new ValidacionException(MensajeError.GESTOPAGO_AUTENTICACION,
                         "No se pudo obtener un token válido de GestoPago. Sincronización abortada."));
     }
 
@@ -126,21 +126,21 @@ public class ProductoService {
         log.debug("XML crudo recibido de GestoPago:\n{}", xmlResponse);
 
         if (xmlResponse == null || xmlResponse.isBlank()) {
-            throw new GestoPagoResponseException("La respuesta del servicio de productos está vacía.", null);
+            throw new ValidacionException(MensajeError.GESTOPAGO_RESPUESTA,
+                    "La respuesta del servicio de productos está vacía.");
         }
 
         JSONObject jsonResponse;
         try {
             jsonResponse = XML.toJSONObject(xmlResponse);
         } catch (Exception e) {
-            throw new GestoPagoResponseException("No se pudo convertir el XML de GestoPago a JSON.", null, e);
+            throw new ValidacionException(MensajeError.GESTOPAGO_RESPUESTA,
+                    "No se pudo convertir el XML de GestoPago a JSON.", e);
         }
 
-        log.debug("JSON parseado desde el XML:\n{}", jsonResponse.toString(2));
-
         if (!jsonResponse.has("RESPONSE")) {
-            throw new GestoPagoResponseException(
-                    "Estructura JSON inesperada al parsear el XML de GestoPago: " + jsonResponse, null);
+            throw new ValidacionException(MensajeError.GESTOPAGO_RESPUESTA,
+                    "Estructura JSON inesperada al parsear el XML de GestoPago: " + jsonResponse);
         }
 
         JSONObject responseObj = jsonResponse.getJSONObject("RESPONSE");
@@ -171,7 +171,7 @@ public class ProductoService {
     }
 
     private int guardarProductos(List<ProductoGestoPagoDTO> productosGestoPago) {
-        LocalDateTime ahora = LocalDateTime.now();
+        LocalDateTime ahora = LocalDateTime.now(ZoneId.systemDefault());
         List<Producto> nuevosProductos = new ArrayList<>();
 
         for (ProductoGestoPagoDTO dto : productosGestoPago) {
@@ -198,11 +198,6 @@ public class ProductoService {
         return nuevosProductos.size();
     }
 
-    /**
-     * Devuelve todos los productos ordenados por tipoFront ascendente (0, 1, 2...).
-     * Intenta leer del cache Redis primero; si no está disponible (sin conexión)
-     * o está vacío, consulta Postgres y repuebla el cache para la próxima vez.
-     */
     public List<Producto> obtenerTodosLosProductos() {
         List<Producto> cacheados = productoCacheService.obtener();
         if (cacheados != null && !cacheados.isEmpty()) {
@@ -217,9 +212,6 @@ public class ProductoService {
         return productos;
     }
 
-    /**
-     * Version para la capa web: regresa DTOs en lugar de la entidad JPA.
-     */
     public List<ProductoData> obtenerProductos() {
         return obtenerTodosLosProductos().stream()
                 .map(this::toData)

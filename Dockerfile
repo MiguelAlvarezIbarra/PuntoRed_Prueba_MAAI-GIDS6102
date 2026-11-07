@@ -12,7 +12,8 @@ RUN sed -i 's/\r$//' gradlew \
 # ---------- Etapa 2: imagen final, solo con lo necesario para correr ----------
 FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=build /app/app.jar app.jar
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+COPY --chown=appuser:appgroup --from=build /app/app.jar app.jar
 
 # El plan gratis de Render tiene 512 MB de RAM: se limita la memoria de la JVM.
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
@@ -21,4 +22,5 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC"
 # No se fija un EXPOSE estatico para evitar discrepancias.
 EXPOSE ${PORT:-8081}
 
+USER appuser
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

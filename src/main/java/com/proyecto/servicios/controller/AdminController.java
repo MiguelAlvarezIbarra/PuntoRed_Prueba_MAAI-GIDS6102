@@ -6,7 +6,6 @@ import com.proyecto.servicios.model.ClienteResponse;
 import com.proyecto.servicios.service.ClienteService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,11 +21,13 @@ import org.springframework.web.bind.annotation.*;
 @Slf4j
 public class AdminController {
 
-    @Autowired
-    private AdminGuard adminGuard;
+    private final AdminGuard adminGuard;
+    private final ClienteService clienteService;
 
-    @Autowired
-    private ClienteService clienteService;
+    public AdminController(AdminGuard adminGuard, ClienteService clienteService) {
+        this.adminGuard = adminGuard;
+        this.clienteService = clienteService;
+    }
 
     @PostMapping(value = "/clientes", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClienteResponse> crearComoAdmin(

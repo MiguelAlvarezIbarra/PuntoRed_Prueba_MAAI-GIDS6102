@@ -6,7 +6,6 @@ import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -21,11 +20,13 @@ public class ActividadSesionInterceptor implements HandlerInterceptor {
 
     private static final String PREFIJO_BEARER = "Bearer ";
 
-    @Autowired
-    private JwtUtil jwtUtil;
+    private final JwtUtil jwtUtil;
+    private final UsuarioService usuarioService;
 
-    @Autowired
-    private UsuarioService usuarioService;
+    public ActividadSesionInterceptor(JwtUtil jwtUtil, UsuarioService usuarioService) {
+        this.jwtUtil = jwtUtil;
+        this.usuarioService = usuarioService;
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {

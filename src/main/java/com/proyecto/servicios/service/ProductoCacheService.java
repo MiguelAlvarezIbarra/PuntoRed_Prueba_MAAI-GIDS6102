@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.List;
@@ -18,7 +18,7 @@ import java.util.function.Supplier;
  * ve una excepción de Redis, solo Optional.empty()/null como señal de
  * "no disponible, usa tu fuente de respaldo".
  */
-@Component
+@Service
 @Slf4j
 public class ProductoCacheService {
 

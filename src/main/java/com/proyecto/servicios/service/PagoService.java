@@ -7,7 +7,7 @@ import com.proyecto.servicios.model.SolicitudPin2faRequest;
 
 public interface PagoService {
 
-    Pin2faResponse enviarPin2fa(SolicitudPin2faRequest request, String authorizationHeader);
+    Pin2faResponse enviarPin2fa(SolicitudPin2faRequest request);
 
-    PagoResponse realizarPago(PagoRequest request, String authorizationHeader);
+    PagoResponse realizarPago(PagoRequest request);
 }

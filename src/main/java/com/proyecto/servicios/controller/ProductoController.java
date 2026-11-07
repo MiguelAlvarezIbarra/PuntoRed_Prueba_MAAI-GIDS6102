@@ -5,7 +5,6 @@ import com.proyecto.servicios.dto.response.ResponseCode;
 import com.proyecto.servicios.model.ProductoData;
 import com.proyecto.servicios.service.ProductoService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;

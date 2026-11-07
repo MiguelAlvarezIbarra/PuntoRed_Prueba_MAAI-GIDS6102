@@ -5,7 +5,6 @@ import com.proyecto.servicios.config.SeguridadGuard;
 import com.proyecto.servicios.model.*;
 import com.proyecto.servicios.service.ClienteService;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,14 +24,18 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/clientes")
 public class ClienteController {
 
-    @Autowired
-    private ClienteService clienteService;
+    private final ClienteService clienteService;
+    private final SeguridadGuard seguridadGuard;
+    private final AdminGuard adminGuard;
 
-    @Autowired
-    private SeguridadGuard seguridadGuard;
-
-    @Autowired
-    private AdminGuard adminGuard;
+    public ClienteController(
+            ClienteService clienteService,
+            SeguridadGuard seguridadGuard,
+            AdminGuard adminGuard) {
+        this.clienteService = clienteService;
+        this.seguridadGuard = seguridadGuard;
+        this.adminGuard = adminGuard;
+    }
 
     @PostMapping(produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ClienteResponse> crearCliente(@Valid @RequestBody ClienteRequest request) {

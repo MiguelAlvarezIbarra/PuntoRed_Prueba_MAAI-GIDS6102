@@ -1,6 +1,5 @@
 package com.proyecto.servicios.config;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -12,8 +11,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableScheduling
 public class WebConfig implements WebMvcConfigurer {
 
-    @Autowired
-    private ActividadSesionInterceptor actividadSesionInterceptor;
+    private final ActividadSesionInterceptor actividadSesionInterceptor;
+
+    public WebConfig(ActividadSesionInterceptor actividadSesionInterceptor) {
+        this.actividadSesionInterceptor = actividadSesionInterceptor;
+    }
 
     /**
      * Orígenes permitidos para CORS. En Render se inyecta la variable

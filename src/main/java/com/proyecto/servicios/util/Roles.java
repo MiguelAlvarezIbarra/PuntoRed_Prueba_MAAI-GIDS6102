@@ -1,8 +1,8 @@
 package com.proyecto.servicios.util;
 
 /**
- * Valores permitidos para usuarios.rol. Centralizados aqui para no regar "numeros magicos"
- * (1, 2) por todo el codigo.
+ * Valores permitidos para usuarios.rol. Centralizados aqui para no dispersar "numeros magicos"
+ * (1, 2) en el codigo.
  */
 public final class Roles {
 

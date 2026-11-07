@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 /**
  * Tabla de SEGURIDAD del cliente: credenciales de login, sesion y biometria.
- * Todo lo que es texto sensible (correo, password, jwt) se guarda cifrado/hasheado.
+ * Cualquier texto sensible (correo, password, jwt) se guarda cifrado/hasheado.
  * Nunca se debe exponer esta entidad directamente en una respuesta de API.
  */
 @Table(name = "usuarios")

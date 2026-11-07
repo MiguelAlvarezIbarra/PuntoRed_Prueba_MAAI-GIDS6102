@@ -2,7 +2,6 @@ package com.proyecto.servicios.service.Impl;
 
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Usuario;
-import com.proyecto.servicios.exception.CredencialesInvalidasException;
 import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.GenericResponse;
@@ -16,33 +15,36 @@ import com.proyecto.servicios.util.JwtUtil;
 import com.proyecto.servicios.util.Roles;
 import io.jsonwebtoken.JwtException;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Service
 @Slf4j
 public class UsuarioServiceImpl implements UsuarioService {
 
-    @Autowired
-    private UsuarioRepository usuarioRepository;
-
-    @Autowired
-    private CryptoUtil cryptoUtil;
-
-    @Autowired
-    private HashUtil hashUtil;
-
-    @Autowired
-    private JwtUtil jwtUtil;
+    private final UsuarioRepository usuarioRepository;
+    private final CryptoUtil cryptoUtil;
+    private final HashUtil hashUtil;
+    private final JwtUtil jwtUtil;
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Value("${seguridad.jwt.expiracion-minutos:15}")
     private long expiracionMinutos;
 
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    public UsuarioServiceImpl(
+            UsuarioRepository usuarioRepository,
+            CryptoUtil cryptoUtil,
+            HashUtil hashUtil,
+            JwtUtil jwtUtil) {
+        this.usuarioRepository = usuarioRepository;
+        this.cryptoUtil = cryptoUtil;
+        this.hashUtil = hashUtil;
+        this.jwtUtil = jwtUtil;
+    }
 
     @Override
     public void crearUsuarioParaCliente(Cliente cliente, String passwordPlano, Integer rol) {
@@ -53,7 +55,6 @@ public class UsuarioServiceImpl implements UsuarioService {
         usuario.setPasswordHash(passwordEncoder.encode(passwordPlano));
         usuario.setRol(rol != null ? rol : Roles.USUARIO_NORMAL);
         usuario.setSesionActiva(false);
-        // datosBiometricos se deja NULL a proposito: aun no se usa, no es obligatorio.
         usuarioRepository.save(usuario);
     }
 
@@ -63,10 +64,10 @@ public class UsuarioServiceImpl implements UsuarioService {
         String correoHash = hashUtil.sha256(request.getCorreo());
 
         Usuario usuario = usuarioRepository.findByCorreoHash(correoHash)
-                .orElseThrow(() -> new CredencialesInvalidasException(MensajeError.CREDENCIALES_INVALIDAS));
+                .orElseThrow(() -> new ValidacionException(MensajeError.CREDENCIALES_INVALIDAS));
 
         if (!passwordEncoder.matches(request.getPassword(), usuario.getPasswordHash())) {
-            throw new CredencialesInvalidasException(MensajeError.CREDENCIALES_INVALIDAS);
+            throw new ValidacionException(MensajeError.CREDENCIALES_INVALIDAS);
         }
 
         if (Boolean.FALSE.equals(usuario.getCliente().getActivo())) {
@@ -76,7 +77,7 @@ public class UsuarioServiceImpl implements UsuarioService {
         String jwt = jwtUtil.generar(usuario.getCliente().getId(), correoHash, usuario.getRol());
         usuario.setJwtCifrado(cryptoUtil.cifrar(jwt));
         usuario.setSesionActiva(true);
-        usuario.setUltimaActividad(LocalDateTime.now());
+        usuario.setUltimaActividad(LocalDateTime.now(ZoneId.systemDefault()));
         usuarioRepository.save(usuario);
 
         LoginResponse response = new LoginResponse();
@@ -114,7 +115,7 @@ public class UsuarioServiceImpl implements UsuarioService {
     public void registrarActividad(Integer clienteId) {
         usuarioRepository.findByCliente_Id(clienteId).ifPresent(usuario -> {
             if (Boolean.TRUE.equals(usuario.getSesionActiva())) {
-                usuario.setUltimaActividad(LocalDateTime.now());
+                usuario.setUltimaActividad(LocalDateTime.now(ZoneId.systemDefault()));
                 usuarioRepository.save(usuario);
             }
         });
