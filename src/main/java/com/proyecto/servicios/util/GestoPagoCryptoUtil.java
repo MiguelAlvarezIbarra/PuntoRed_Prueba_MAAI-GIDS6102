@@ -32,7 +32,10 @@ public class GestoPagoCryptoUtil {
     private final SecureRandom random = new SecureRandom();
 
     public GestoPagoCryptoUtil(
-            @Value("${gestopago.tx.aes-key:HPo7OLqB4Fkk4E2yGOtwqw8H5fHR9kNx67OR4g4UdlA=}") String keyBase64) {
+            @Value("${gestopago.tx.aes-key}") String keyBase64) {
+        if (keyBase64 == null || keyBase64.isBlank()) {
+            throw new IllegalStateException("Propiedad gestopago.tx.aes-key no configurada");
+        }
         byte[] keyBytes = Base64.getDecoder().decode(keyBase64.trim());
         this.secretKey = new SecretKeySpec(keyBytes, "AES");
     }

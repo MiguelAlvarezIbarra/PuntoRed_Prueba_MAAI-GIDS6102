@@ -45,6 +45,7 @@ bin/
 ### Archivos de entorno / secretos — NUNCA subir al repo ###
 .env
 .env.*
+!.env.example
 *.env
 application-local.properties
 application-secret.properties
