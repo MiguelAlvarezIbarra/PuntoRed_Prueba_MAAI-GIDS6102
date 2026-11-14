@@ -51,6 +51,7 @@ public class ProductoService {
     public void syncOnStartup() {
         log.info("Iniciando sincronización de productos al arrancar la aplicación...");
         try {
+            gestoPagoTokenService.renovarToken();
             sincronizarProductos();
         } catch (Exception e) {
             log.error("Sincronización inicial de productos falló: {}", e.getMessage(), e);

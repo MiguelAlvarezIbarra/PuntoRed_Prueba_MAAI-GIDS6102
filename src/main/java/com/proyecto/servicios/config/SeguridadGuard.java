@@ -76,6 +76,17 @@ public class SeguridadGuard {
         }
     }
 
+    /**
+     * Exige un Bearer token valido y retorna su informacion.
+     */
+    public InfoToken exigirToken(String authorizationHeader) {
+        InfoToken info = extraerInfoToken(authorizationHeader);
+        if (info == null) {
+            throw new ValidacionException(MensajeError.TOKEN_FALTANTE);
+        }
+        return info;
+    }
+
     public static class InfoToken {
         private final Integer clienteId;
         private final Integer rol;

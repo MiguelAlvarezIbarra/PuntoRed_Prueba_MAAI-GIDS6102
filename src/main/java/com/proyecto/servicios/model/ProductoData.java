@@ -21,5 +21,10 @@ public class ProductoData {
     private Integer tipoFront;
     private String tipoReferencia;
     private String precio;
+    private String logoUrl;
+    private String descripcion;
+    private String categoria;
+    private String codigoProveedor;
+    private String tipoOperacion;
     private LocalDateTime fechaActualizacion;
 }

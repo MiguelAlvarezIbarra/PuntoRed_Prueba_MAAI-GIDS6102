@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 public class CuentaData {
     private Integer id;
     private Integer clienteId;
+    private String nombreCliente;
     private String numeroCuenta;
     private BigDecimal saldo;
     private String estatus;

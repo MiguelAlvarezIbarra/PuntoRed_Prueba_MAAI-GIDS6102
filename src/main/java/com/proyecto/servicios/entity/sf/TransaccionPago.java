@@ -67,6 +67,39 @@ public class TransaccionPago {
     @Column(name = "mensaje_respuesta", columnDefinition = "TEXT", nullable = false)
     private String mensajeRespuesta;
 
+    @Column(name = "nombre_servicio", columnDefinition = "TEXT")
+    private String nombreServicio;
+
+    @Column(name = "nombre_producto", columnDefinition = "TEXT")
+    private String nombreProducto;
+
+    @Column(name = "categoria", columnDefinition = "TEXT")
+    private String categoria;
+
+    @Column(name = "logo_url", columnDefinition = "TEXT")
+    private String logoUrl;
+
+    @Column(name = "referencia_secundaria", columnDefinition = "TEXT")
+    private String referenciaSecundaria;
+
+    @Column(name = "trace", columnDefinition = "TEXT")
+    private String trace;
+
+    @Column(name = "estado", columnDefinition = "TEXT", nullable = false)
+    private String estado = "EXITOSA";
+
+    @Column(name = "ticket_json", columnDefinition = "TEXT")
+    private String ticketJson;
+
+    @Column(name = "proveedor", columnDefinition = "TEXT", nullable = false)
+    private String proveedor = "GESTOPAGO";
+
+    @Column(name = "codigo_producto_externo", columnDefinition = "TEXT")
+    private String codigoProductoExterno;
+
+    @Column(name = "codigo_convenio_externo", columnDefinition = "TEXT")
+    private String codigoConvenioExterno;
+
     @Column(name = "fecha_registro", nullable = false)
     private LocalDateTime fechaRegistro;
 
@@ -74,6 +107,12 @@ public class TransaccionPago {
     public void prePersist() {
         if (fechaRegistro == null) {
             fechaRegistro = LocalDateTime.now(ZoneId.systemDefault());
+        }
+        if (estado == null || estado.isBlank()) {
+            estado = "EXITOSA";
+        }
+        if (proveedor == null || proveedor.isBlank()) {
+            proveedor = "GESTOPAGO";
         }
     }
 }
