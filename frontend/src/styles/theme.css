@@ -1,0 +1,234 @@
+:root,
+[data-bs-theme='light'] {
+  --pr-navy: #0a1628;
+  --pr-navy-soft: #13233d;
+  --pr-accent: #1d4ed8;
+  --pr-accent-soft: rgba(29, 78, 216, 0.1);
+  --pr-emerald: #059669;
+  --pr-emerald-soft: rgba(5, 150, 105, 0.12);
+  --pr-gold: #c9a227;
+  --pr-bg: #f4f6fa;
+  --pr-surface: #ffffff;
+  --pr-surface-elevated: #ffffff;
+  --pr-border: #e2e8f0;
+  --pr-text: #0f172a;
+  --pr-text-muted: #64748b;
+  --pr-shadow: 0 8px 24px -6px rgba(10, 22, 40, 0.08);
+}
+
+[data-bs-theme='dark'] {
+  --pr-navy: #050b16;
+  --pr-navy-soft: #0f1d33;
+  --pr-accent: #3b82f6;
+  --pr-accent-soft: rgba(59, 130, 246, 0.16);
+  --pr-emerald: #10b981;
+  --pr-emerald-soft: rgba(16, 185, 129, 0.16);
+  --pr-gold: #eab308;
+  --pr-bg: #07101f;
+  --pr-surface: #0d192e;
+  --pr-surface-elevated: #12223d;
+  --pr-border: #1e314f;
+  --pr-text: #f1f5f9;
+  --pr-text-muted: #94a3b8;
+  --pr-shadow: 0 12px 30px -8px rgba(0, 0, 0, 0.45);
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--pr-bg);
+  color: var(--pr-text);
+  margin: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6, .brand-font {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.pr-app-shell {
+  min-height: 100vh;
+  display: flex;
+  background-color: var(--pr-bg);
+}
+
+.pr-sidebar {
+  width: 268px;
+  background: linear-gradient(180deg, #0a1628 0%, #0f203b 100%);
+  color: #e2e8f0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 1020;
+}
+
+.pr-sidebar .nav-link {
+  color: #cbd5e1;
+  border-radius: 10px;
+  padding: 0.72rem 0.95rem;
+  font-weight: 500;
+  font-size: 0.93rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+}
+
+.pr-sidebar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+.pr-sidebar .nav-link.active {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 16px -4px rgba(29, 78, 216, 0.55);
+}
+
+.pr-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-topbar {
+  background-color: var(--pr-surface);
+  border-bottom: 1px solid var(--pr-border);
+  padding: 0.75rem 1.25rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  position: sticky;
+  top: 0;
+  z-index: 1010;
+  backdrop-filter: blur(10px);
+}
+
+.pr-card {
+  background-color: var(--pr-surface);
+  border: 1px solid var(--pr-border);
+  border-radius: 14px;
+  box-shadow: var(--pr-shadow);
+}
+
+.pr-card-elevated {
+  background-color: var(--pr-surface-elevated);
+  border: 1px solid var(--pr-border);
+  border-radius: 14px;
+}
+
+.pr-hero-card {
+  background: linear-gradient(135deg, #0a1628 0%, #142a4f 60%, #1e3a8a 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 14px 32px -10px rgba(10, 22, 40, 0.45);
+}
+
+.pr-gold-pill {
+  background-color: rgba(201, 162, 39, 0.16);
+  color: #facc15;
+  border: 1px solid rgba(201, 162, 39, 0.35);
+}
+
+.pr-account-number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+
+.pr-kpi-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+}
+
+.pr-auth-wrapper {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(29, 78, 216, 0.16), transparent 45%),
+    radial-gradient(circle at bottom left, rgba(5, 150, 105, 0.12), transparent 45%),
+    var(--pr-bg);
+}
+
+.pr-auth-brand-panel {
+  background: linear-gradient(155deg, #06101f 0%, #0d2142 55%, #16376b 100%);
+  color: #f8fafc;
+}
+
+.pr-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: var(--pr-surface);
+  border-top: 1px solid var(--pr-border);
+  padding: 0.35rem 0.25rem calc(0.4rem + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: space-around;
+  z-index: 1030;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.pr-bottom-nav-btn {
+  background: transparent;
+  border: 0;
+  color: var(--pr-text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border-radius: 10px;
+}
+
+.pr-bottom-nav-btn i {
+  font-size: 1.2rem;
+}
+
+.pr-bottom-nav-btn.active {
+  color: var(--pr-accent);
+  background-color: var(--pr-accent-soft);
+}
+
+.pr-content-area {
+  padding: 1.25rem;
+}
+
+@media (max-width: 991.98px) {
+  .pr-content-area {
+    padding: 0.9rem 0.85rem 5.4rem;
+  }
+}
+
+.pr-stepper-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.pr-receipt {
+  border: 1px dashed var(--pr-border);
+  background: var(--pr-surface-elevated);
+  border-radius: 14px;
+}
+
+.table > :not(caption) > * > * {
+  background-color: transparent;
+}
