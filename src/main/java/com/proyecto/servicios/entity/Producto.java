@@ -49,6 +49,21 @@ public class Producto {
     @Column(name = "precio")
     private String precio;
 
+    @Column(name = "logo_url", columnDefinition = "TEXT")
+    private String logoUrl;
+
+    @Column(name = "descripcion", columnDefinition = "TEXT")
+    private String descripcion;
+
+    @Column(name = "categoria", length = 120)
+    private String categoria;
+
+    @Column(name = "codigo_proveedor", length = 60)
+    private String codigoProveedor;
+
+    @Column(name = "tipo_operacion", length = 30)
+    private String tipoOperacion;
+
     @Column(name = "fecha_actualizacion")
     private LocalDateTime fechaActualizacion;
 }
