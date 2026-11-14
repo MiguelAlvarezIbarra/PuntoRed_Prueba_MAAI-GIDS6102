@@ -81,6 +81,18 @@ public enum MensajeError {
     GESTOPAGO_RESPUESTA(23, "El proveedor de productos respondio con un error", HttpStatus.BAD_GATEWAY),
     GESTOPAGO_PAGO_RECHAZADO(24, "Código %s: %s", HttpStatus.BAD_REQUEST),
 
+    // Integracion con Puntored H2H V2 (Códigos 25 a 33)
+    PUNTORED_AUTENTICACION(25, "No se pudo autenticar con la plataforma PuntoRed", HttpStatus.BAD_GATEWAY),
+    PUNTORED_TIMEOUT(26, "Tiempo de espera agotado al comunicarse con PuntoRed; la operacion quedo pendiente de confirmacion", HttpStatus.GATEWAY_TIMEOUT),
+    PUNTORED_COMUNICACION(27, "Error de comunicacion con los servicios de PuntoRed", HttpStatus.SERVICE_UNAVAILABLE),
+    PUNTORED_REFERENCIA_INVALIDA(28, "La referencia ingresada no es valida o no fue encontrada para el servicio seleccionado", HttpStatus.BAD_REQUEST),
+    PUNTORED_REFERENCIA_NO_VALIDADA(28, "Debe validar correctamente la referencia antes de confirmar y procesar el pago", HttpStatus.BAD_REQUEST),
+    PUNTORED_PAGO_RECHAZADO(29, "Pago rechazado por PuntoRed: %s", HttpStatus.BAD_REQUEST),
+    PUNTORED_TRANSACCION_NO_ENCONTRADA(30, "No existe una transaccion de pago con ese identificador", HttpStatus.NOT_FOUND),
+    PUNTORED_MONTO_INVALIDO(31, "El monto indicado no cumple las reglas del convenio: %s", HttpStatus.BAD_REQUEST),
+    PUNTORED_CONFIG_FALTANTE(32, "Las credenciales de PuntoRed no estan configuradas en el servidor", HttpStatus.SERVICE_UNAVAILABLE),
+    CONFIRMACION_PAGO_REQUERIDA(33, "Se requiere la confirmacion explicita del usuario para procesar el pago", HttpStatus.BAD_REQUEST),
+
     // Error interno del servidor (Código 99)
     ERROR_INTERNO(99, "Ocurrio un error inesperado, intenta de nuevo mas tarde", HttpStatus.INTERNAL_SERVER_ERROR);
 
