@@ -1,5 +1,7 @@
 package com.proyecto.servicios.model.puntored;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -62,7 +64,22 @@ public class PagoPuntoredRequest {
     @NotNull(message = "Código 33: Se requiere confirmación explícita del resumen de pago")
     private Boolean confirmacionExplicita;
 
-    @NotBlank(message = "Código 1: El PIN de autenticación 2FA es obligatorio")
-    @Pattern(regexp = "^[0-9]{6}$", message = "Código 1: El PIN 2FA debe tener exactamente 6 dígitos")
+    /**
+     * Metodo 2FA opcional: "PIN_CORREO" (predeterminado) o "BIOMETRIA_MOVIL".
+     */
+    private String metodo2fa;
+
+    private Boolean biometriaVerificada;
+
+    @Pattern(regexp = "^([0-9]{6})?$", message = "Código 1: El PIN 2FA debe tener exactamente 6 dígitos")
     private String pin2fa;
+
+    @JsonIgnore
+    @AssertTrue(message = "Código 1: El PIN de autenticación 2FA es obligatorio cuando el método es PIN por correo")
+    public boolean isAutorizacion2faValida() {
+        if ("BIOMETRIA_MOVIL".equalsIgnoreCase(metodo2fa != null ? metodo2fa.trim() : "")) {
+            return Boolean.TRUE.equals(biometriaVerificada);
+        }
+        return pin2fa != null && pin2fa.trim().matches("^[0-9]{6}$");
+    }
 }
