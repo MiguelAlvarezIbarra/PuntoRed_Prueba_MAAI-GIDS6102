@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../core/formatters.dart';
 import '../models/api_models.dart';
+import '../services/api_service.dart';
+import '../services/biometric_service.dart';
 import '../state/app_state.dart';
 import '../widgets/common_widgets.dart';
 
@@ -212,159 +214,353 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
+    final bioReady = widget.appState.biometricAvailable;
+    final bioStatus = widget.appState.biometricStatus;
+    bool useBiometrics = bioReady;
     final pinCtrl = TextEditingController();
     bool confirmedCheck = false;
     bool sendingPin = false;
+    bool verifyingBio = false;
     String? pinHint;
+    bool pinHintIsWarning = false;
     String? dialogError;
 
-    final confirmedPayload = await showDialog<String>(
+    final confirmedPayload = await showDialog<Map<String, String>>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => AlertDialog(
-          title: const Text('Confirmación Explícita de Pago'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    ServiceLogoWidget(
-                      logoUrl: srv.logoUrl,
-                      name: srv.nombreServicio,
-                      tipoOperacion: srv.tipoOperacion,
-                      size: 42,
+        builder: (ctx, setModalState) {
+          final bioIcon = (bioStatus.supportsFace && !bioStatus.supportsFingerprint)
+              ? Icons.face_retouching_natural_rounded
+              : Icons.fingerprint_rounded;
+          final cs = Theme.of(ctx).colorScheme;
+          final busy = sendingPin || verifyingBio;
+
+          return AlertDialog(
+            title: const Text('Confirmación Explícita de Pago'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      ServiceLogoWidget(
+                        logoUrl: srv.logoUrl,
+                        name: srv.nombreServicio,
+                        tipoOperacion: srv.tipoOperacion,
+                        size: 42,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(srv.nombreServicio,
+                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text(srv.nombreProducto, style: Theme.of(ctx).textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 18),
+                  _summaryRow('Cuenta origen', AppFormatters.formatAccountNumber(cuenta.numeroCuenta)),
+                  _summaryRow('Referencia', _ref1Ctrl.text.trim()),
+                  _summaryRow('Importe a pagar', AppFormatters.formatCurrency(monto)),
+                  _summaryRow('Nuevo saldo estimado',
+                      AppFormatters.formatCurrency(cuenta.saldo - monto)),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Método de verificación 2FA',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .labelLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<bool>(
+                    key: const ValueKey('payment2faMethodToggle'),
+                    showSelectedIcon: false,
+                    style: ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    segments: [
+                      ButtonSegment<bool>(
+                        value: true,
+                        icon: Icon(bioIcon, size: 18),
+                        label: Text(
+                          bioStatus.supportsFace && !bioStatus.supportsFingerprint
+                              ? 'Face ID'
+                              : 'Huella/Face',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const ButtonSegment<bool>(
+                        value: false,
+                        icon: Icon(Icons.mark_email_read_rounded, size: 18),
+                        label: Text(
+                          'Correo',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    selected: <bool>{useBiometrics},
+                    onSelectionChanged: busy
+                        ? null
+                        : (sel) {
+                            setModalState(() {
+                              useBiometrics = sel.first;
+                              dialogError = null;
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  if (useBiometrics) ...[
+                    Container(
+                      key: const ValueKey('biometricPaymentBox'),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: bioReady
+                            ? cs.primaryContainer.withValues(alpha: 0.35)
+                            : cs.errorContainer.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: bioReady
+                              ? cs.primary.withValues(alpha: 0.35)
+                              : cs.error.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
                         children: [
-                          Text(srv.nombreServicio,
-                              style: const TextStyle(fontWeight: FontWeight.bold)),
-                          Text(srv.nombreProducto, style: Theme.of(ctx).textTheme.bodySmall),
+                          Icon(
+                            bioReady ? bioIcon : Icons.warning_amber_rounded,
+                            color: bioReady ? cs.primary : cs.error,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              bioReady
+                                  ? 'Se pedirá tu ${bioStatus.shortLabel.toLowerCase()} al confirmar este pago. Sin esperar códigos por correo.'
+                                  : '${bioStatus.description} Cambia al método Correo o registra tu biometría en Ajustes.',
+                              style: Theme.of(ctx).textTheme.bodySmall,
+                            ),
+                          ),
                         ],
                       ),
                     ),
+                  ] else ...[
+                    if ((widget.appState.session?.correo ?? '').isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          'Correo destino: ${widget.appState.session!.correo}',
+                          style: Theme.of(ctx)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('sendPinEmailButton'),
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              setModalState(() {
+                                sendingPin = true;
+                                dialogError = null;
+                              });
+                              try {
+                                final r = await widget.appState.api
+                                    .enviarPin2fa(cuenta.numeroCuenta);
+                                final sentReal = r['correoEnviado'] == true;
+                                final demoPin = r['pin2fa']?.toString();
+                                if (demoPin != null && demoPin.isNotEmpty) {
+                                  pinCtrl.text = demoPin;
+                                }
+                                setModalState(() {
+                                  if (demoPin != null && demoPin.isNotEmpty) {
+                                    pinHintIsWarning = !sentReal;
+                                    pinHint = sentReal
+                                        ? 'PIN enviado a ${r['correoDestino']} (Modo pruebas: $demoPin autocompletado).'
+                                        : 'El servidor no tiene correo configurado (no salió email a ${r['correoDestino'] ?? 'tu correo'}). PIN temporal autocompletado: $demoPin';
+                                  } else {
+                                    pinHintIsWarning = false;
+                                    pinHint =
+                                        'PIN 2FA enviado a ${r['correoDestino'] ?? 'tu correo'}. Revisa tu bandeja o spam.';
+                                  }
+                                });
+                              } catch (e) {
+                                setModalState(() => dialogError = e.toString());
+                              } finally {
+                                if (ctx.mounted) {
+                                  setModalState(() => sendingPin = false);
+                                }
+                              }
+                            },
+                      icon: sendingPin
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.mark_email_read_rounded),
+                      label: const Text('Enviar PIN 2FA a mi correo'),
+                    ),
+                    if (pinHint != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: pinHintIsWarning
+                              ? const Color(0xFFFEF3C7)
+                              : cs.primaryContainer.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          pinHint!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: pinHintIsWarning
+                                ? const Color(0xFF92400E)
+                                : cs.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const ValueKey('paymentPinField'),
+                      controller: pinCtrl,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: const InputDecoration(
+                        labelText: 'PIN de seguridad 2FA (6 dígitos)',
+                        border: OutlineInputBorder(),
+                        counterText: '',
+                      ),
+                    ),
                   ],
-                ),
-                const Divider(height: 18),
-                _summaryRow('Cuenta origen', AppFormatters.formatAccountNumber(cuenta.numeroCuenta)),
-                _summaryRow('Referencia', _ref1Ctrl.text.trim()),
-                _summaryRow('Importe a pagar', AppFormatters.formatCurrency(monto)),
-                _summaryRow('Nuevo saldo estimado',
-                    AppFormatters.formatCurrency(cuenta.saldo - monto)),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: sendingPin
-                      ? null
-                      : () async {
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    key: const ValueKey('confirmExplicitCheckbox'),
+                    value: confirmedCheck,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text(
+                      'Confirmo explícitamente el servicio, referencia e importe de esta operación.',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    onChanged: busy
+                        ? null
+                        : (v) => setModalState(() => confirmedCheck = v ?? false),
+                  ),
+                  if (dialogError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        dialogError!,
+                        style: TextStyle(color: cs.error, fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: busy ? null : () => Navigator.of(ctx).pop(null),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                key: const ValueKey('authorizePaymentButton'),
+                onPressed: busy || (useBiometrics && !bioReady)
+                    ? null
+                    : () async {
+                        if (!confirmedCheck) {
+                          setModalState(() => dialogError =
+                              'Marca la casilla de confirmación explícita.');
+                          return;
+                        }
+                        if (useBiometrics) {
                           setModalState(() {
-                            sendingPin = true;
+                            verifyingBio = true;
                             dialogError = null;
                           });
                           try {
-                            final r = await widget.appState.api.enviarPin2fa(cuenta.numeroCuenta);
-                            final demoPin = r['pin2fa']?.toString();
-                            setModalState(() {
-                              pinHint = demoPin != null && demoPin.isNotEmpty
-                                  ? 'PIN enviado a ${r['correoDestino']} (Código: $demoPin)'
-                                  : 'PIN 2FA enviado a ${r['correoDestino'] ?? 'tu correo'}.';
-                            });
+                            await widget.appState.biometric.verify(
+                              localizedReason:
+                                  'Autoriza el pago de ${AppFormatters.formatCurrency(monto)} en ${srv.nombreServicio}',
+                              signInTitle: 'Autorizar Pago PuntoRed',
+                              signInHint: 'Usa tu huella o Face ID para confirmar',
+                            );
+                            if (ctx.mounted) {
+                              Navigator.of(ctx).pop(const <String, String>{
+                                'method': 'BIOMETRIA_MOVIL',
+                              });
+                            }
+                          } on BiometricAuthException catch (e) {
+                            if (ctx.mounted) {
+                              setModalState(() => dialogError = e.message);
+                            }
                           } catch (e) {
-                            setModalState(() => dialogError = e.toString());
+                            if (ctx.mounted) {
+                              setModalState(() => dialogError = e.toString());
+                            }
                           } finally {
-                            setModalState(() => sendingPin = false);
+                            if (ctx.mounted) {
+                              setModalState(() => verifyingBio = false);
+                            }
                           }
-                        },
-                  icon: sendingPin
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.mark_email_read_rounded),
-                  label: const Text('Enviar PIN 2FA a mi correo'),
+                          return;
+                        }
+
+                        final pin = pinCtrl.text.trim();
+                        if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
+                          setModalState(() => dialogError =
+                              'Ingresa o solicita el PIN 2FA de 6 dígitos.');
+                          return;
+                        }
+                        Navigator.of(ctx).pop(<String, String>{
+                          'method': 'PIN_CORREO',
+                          'pin': pin,
+                        });
+                      },
+                icon: verifyingBio
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(useBiometrics ? bioIcon : Icons.verified_user_rounded),
+                label: Text(
+                  useBiometrics
+                      ? (verifyingBio ? 'Verificando...' : 'Autorizar con Huella')
+                      : 'Autorizar y Pagar',
                 ),
-                if (pinHint != null) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    pinHint!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(ctx).colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                TextField(
-                  controller: pinCtrl,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  decoration: const InputDecoration(
-                    labelText: 'PIN de seguridad 2FA (6 dígitos)',
-                    border: OutlineInputBorder(),
-                    counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                CheckboxListTile(
-                  value: confirmedCheck,
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(
-                    'Confirmo explícitamente el servicio, referencia e importe de esta operación.',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  onChanged: (v) => setModalState(() => confirmedCheck = v ?? false),
-                ),
-                if (dialogError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      dialogError!,
-                      style: TextStyle(color: Theme.of(ctx).colorScheme.error, fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(null),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton.icon(
-              onPressed: () {
-                final pin = pinCtrl.text.trim();
-                if (!confirmedCheck) {
-                  setModalState(() => dialogError = 'Marca la casilla de confirmación explícita.');
-                  return;
-                }
-                if (!RegExp(r'^\d{6}$').hasMatch(pin)) {
-                  setModalState(() => dialogError = 'Ingresa el PIN 2FA de 6 dígitos.');
-                  return;
-                }
-                Navigator.of(ctx).pop(pin);
-              },
-              icon: const Icon(Icons.verified_user_rounded),
-              label: const Text('Autorizar y Pagar'),
-            ),
-          ],
-        ),
+              ),
+            ],
+          );
+        },
       ),
     );
     pinCtrl.dispose();
 
     if (confirmedPayload != null) {
-      await _ejecutarPago(confirmedPayload);
+      await _ejecutarPago(
+        metodo2fa: confirmedPayload['method'] ?? 'PIN_CORREO',
+        pin2fa: confirmedPayload['pin'],
+      );
     }
   }
 
-  Future<void> _ejecutarPago(String pin2fa) async {
+  Future<void> _ejecutarPago({
+    required String metodo2fa,
+    String? pin2fa,
+  }) async {
     final cuenta = _cuentaSeleccionada!;
     final srv = _servicioSeleccionado!;
     final val = _validacion!;
@@ -376,41 +572,74 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _error = null;
     });
 
+    final basePayload = <String, dynamic>{
+      'numeroCuenta': cuenta.numeroCuenta,
+      'tipoOperacion': srv.tipoOperacion,
+      'nombreServicio': srv.nombreServicio,
+      'nombreProducto': srv.nombreProducto,
+      'categoria': srv.categoria,
+      if (srv.logoUrl != null) 'logoUrl': srv.logoUrl,
+      'referencia1': _ref1Ctrl.text.trim(),
+      if (_ref2Ctrl.text.trim().isNotEmpty) 'referencia2': _ref2Ctrl.text.trim(),
+      'monto': monto,
+      if (srv.idConvenio != null) 'idConvenio': srv.idConvenio,
+      if (srv.proveedorCodigo != null) 'codigoProveedor': srv.proveedorCodigo,
+      if (srv.codigoCategoria != null) 'codigoCategoria': srv.codigoCategoria,
+      if (srv.codigoProducto != null) 'codigoProducto': srv.codigoProducto,
+      if (srv.sku != null) 'sku': srv.sku,
+      if (srv.idPin != null) 'idPin': srv.idPin,
+      if (srv.idSubcategoriaPin != null)
+        'idSubcategoriaPin': srv.idSubcategoriaPin,
+      if (_opcionSeleccionada?.codigoRegistro != null)
+        'codigoRegistro': _opcionSeleccionada!.codigoRegistro,
+      if (_iacCtrl.text.trim().isNotEmpty) 'codigoIac': _iacCtrl.text.trim(),
+      if (val.trace != null) 'traceValidacion': val.trace,
+      'tokenValidacion': val.tokenValidacion ?? '',
+      if (aval['montoQuery'] != null) 'montoQuery': aval['montoQuery'],
+      if (aval['aditionalValue54Eco'] != null)
+        'aditionalValue54Eco': aval['aditionalValue54Eco'],
+      if (aval['aditionalValue62Eco'] != null)
+        'aditionalValue62Eco': aval['aditionalValue62Eco'],
+      if (aval['accountDataAcredited'] != null)
+        'accountDataAcredited': aval['accountDataAcredited'],
+      if (aval['additionalCompanyCode'] != null)
+        'additionalCompanyCode': aval['additionalCompanyCode'],
+      'confirmacionExplicita': true,
+    };
+
     try {
-      final resp = await widget.appState.api.realizarPagoPuntored({
-        'numeroCuenta': cuenta.numeroCuenta,
-        'tipoOperacion': srv.tipoOperacion,
-        'nombreServicio': srv.nombreServicio,
-        'nombreProducto': srv.nombreProducto,
-        'categoria': srv.categoria,
-        if (srv.logoUrl != null) 'logoUrl': srv.logoUrl,
-        'referencia1': _ref1Ctrl.text.trim(),
-        if (_ref2Ctrl.text.trim().isNotEmpty) 'referencia2': _ref2Ctrl.text.trim(),
-        'monto': monto,
-        if (srv.idConvenio != null) 'idConvenio': srv.idConvenio,
-        if (srv.proveedorCodigo != null) 'codigoProveedor': srv.proveedorCodigo,
-        if (srv.codigoCategoria != null) 'codigoCategoria': srv.codigoCategoria,
-        if (srv.codigoProducto != null) 'codigoProducto': srv.codigoProducto,
-        if (srv.sku != null) 'sku': srv.sku,
-        if (srv.idPin != null) 'idPin': srv.idPin,
-        if (srv.idSubcategoriaPin != null) 'idSubcategoriaPin': srv.idSubcategoriaPin,
-        if (_opcionSeleccionada?.codigoRegistro != null)
-          'codigoRegistro': _opcionSeleccionada!.codigoRegistro,
-        if (_iacCtrl.text.trim().isNotEmpty) 'codigoIac': _iacCtrl.text.trim(),
-        if (val.trace != null) 'traceValidacion': val.trace,
-        'tokenValidacion': val.tokenValidacion ?? '',
-        if (aval['montoQuery'] != null) 'montoQuery': aval['montoQuery'],
-        if (aval['aditionalValue54Eco'] != null)
-          'aditionalValue54Eco': aval['aditionalValue54Eco'],
-        if (aval['aditionalValue62Eco'] != null)
-          'aditionalValue62Eco': aval['aditionalValue62Eco'],
-        if (aval['accountDataAcredited'] != null)
-          'accountDataAcredited': aval['accountDataAcredited'],
-        if (aval['additionalCompanyCode'] != null)
-          'additionalCompanyCode': aval['additionalCompanyCode'],
-        'confirmacionExplicita': true,
-        'pin2fa': pin2fa,
-      });
+      PagoPuntoredResponse resp;
+      if (metodo2fa == 'BIOMETRIA_MOVIL') {
+        try {
+          resp = await widget.appState.api.realizarPagoPuntored({
+            ...basePayload,
+            'metodo2fa': 'BIOMETRIA_MOVIL',
+            'biometriaVerificada': true,
+          });
+        } on ApiClientException catch (e) {
+          // Compatibilidad temporal mientras el servidor previo en Render no tenga BIOMETRIA_MOVIL.
+          if (e.status == 400 && (e.codigo == 1 || e.codigo == 16)) {
+            final pinResp =
+                await widget.appState.api.enviarPin2fa(cuenta.numeroCuenta);
+            final fallbackPin = pinResp['pin2fa']?.toString();
+            if (fallbackPin == null || fallbackPin.isEmpty) {
+              rethrow;
+            }
+            resp = await widget.appState.api.realizarPagoPuntored({
+              ...basePayload,
+              'pin2fa': fallbackPin,
+            });
+          } else {
+            rethrow;
+          }
+        }
+      } else {
+        resp = await widget.appState.api.realizarPagoPuntored({
+          ...basePayload,
+          'metodo2fa': 'PIN_CORREO',
+          'pin2fa': pin2fa ?? '',
+        });
+      }
 
       await _refrescarSaldosSinBloquear();
       if (mounted) {
@@ -532,6 +761,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   initialValue: _cuentaSeleccionada?.numeroCuenta,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Cuenta de origen',
                     border: OutlineInputBorder(),
@@ -552,35 +782,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   },
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: _servicioSeleccionado?.claveUnica,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Servicio / Producto Puntored',
-                    border: OutlineInputBorder(),
+                InkWell(
+                  key: const ValueKey('paymentServicePicker'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _catalogo.isEmpty ? null : _openServicePicker,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Servicio / Producto Puntored',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.manage_search_rounded),
+                    ),
+                    child: Text(
+                      _servicioSeleccionado != null
+                          ? '${_servicioSeleccionado!.nombreServicio} • ${_servicioSeleccionado!.nombreProducto} (${_servicioSeleccionado!.tipoOperacion})'
+                          : 'Toca para buscar en ${_catalogo.length} servicios...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _servicioSeleccionado == null
+                          ? TextStyle(color: cs.onSurfaceVariant)
+                          : null,
+                    ),
                   ),
-                  items: _catalogo
-                      .map((s) => DropdownMenuItem(
-                            value: s.claveUnica,
-                            child: Text(
-                              '${s.nombreServicio} • ${s.nombreProducto} (${s.tipoOperacion})',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ))
-                      .toList(),
-                  onChanged: (val) {
-                    final found = _catalogo.firstWhere((s) => s.claveUnica == val);
-                    setState(() {
-                      _servicioSeleccionado = found;
-                      _validacion = null;
-                      _opcionSeleccionada = null;
-                      _resultadoPago = null;
-                      _error = null;
-                      _montoCtrl.text = found.precioSugerido != null
-                          ? found.precioSugerido!.toStringAsFixed(2)
-                          : '';
-                    });
-                  },
                 ),
                 if (_servicioSeleccionado != null) ...[
                   const SizedBox(height: 12),
@@ -682,11 +904,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           children: [
                             Icon(Icons.verified_rounded, color: Color(0xFF065F46), size: 18),
                             SizedBox(width: 6),
-                            Text(
-                              'Referencia válida — Pago habilitado',
-                              style: TextStyle(
-                                color: Color(0xFF065F46),
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              child: Text(
+                                'Referencia válida — Pago habilitado',
+                                style: TextStyle(
+                                  color: Color(0xFF065F46),
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -722,6 +946,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 if (_validacion != null && _validacion!.opciones.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     initialValue: _opcionSeleccionada?.codigoRegistro,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Opción devuelta por el convenio',
                       border: OutlineInputBorder(),
@@ -731,6 +956,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               value: o.codigoRegistro ?? '',
                               child: Text(
                                 '${o.descripcionRegistro ?? 'Opción'} (${AppFormatters.formatCurrency(o.monto)})',
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ))
                         .toList(),
@@ -813,8 +1039,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Resultado de la Operación',
-                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Text(
+                    'Resultado de la Operación',
+                    style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 StatusBadge(estado: r.estado),
               ],
             ),
@@ -891,6 +1122,164 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openServicePicker() async {
+    final chosen = await showModalBottomSheet<CatalogoServicioItem>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => _ServicePickerSheet(
+        catalogo: _catalogo,
+        selected: _servicioSeleccionado,
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      _servicioSeleccionado = chosen;
+      _validacion = null;
+      _opcionSeleccionada = null;
+      _resultadoPago = null;
+      _error = null;
+      _montoCtrl.text = chosen.precioSugerido != null
+          ? chosen.precioSugerido!.toStringAsFixed(2)
+          : '';
+    });
+  }
+}
+
+class _ServicePickerSheet extends StatefulWidget {
+  final List<CatalogoServicioItem> catalogo;
+  final CatalogoServicioItem? selected;
+
+  const _ServicePickerSheet({
+    required this.catalogo,
+    required this.selected,
+  });
+
+  @override
+  State<_ServicePickerSheet> createState() => _ServicePickerSheetState();
+}
+
+class _ServicePickerSheetState extends State<_ServicePickerSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _query.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? widget.catalogo
+        : widget.catalogo.where((s) {
+            return s.nombreServicio.toLowerCase().contains(q) ||
+                s.nombreProducto.toLowerCase().contains(q) ||
+                s.categoria.toLowerCase().contains(q) ||
+                s.tipoOperacion.toLowerCase().contains(q) ||
+                (s.codigoProducto?.toString().contains(q) ?? false);
+          }).toList();
+    final visible = filtered.length > 200 ? filtered.sublist(0, 200) : filtered;
+
+    return FractionallySizedBox(
+      heightFactor: 0.88,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Seleccionar Servicio (${filtered.length})',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _searchCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Buscar CFE, Telcel, código o producto...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                border: const OutlineInputBorder(),
+                suffixIcon: _query.isNotEmpty
+                    ? IconButton(
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _query = '');
+                        },
+                        icon: const Icon(Icons.clear_rounded),
+                      )
+                    : null,
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: visible.isEmpty
+                  ? const Center(
+                      child: Text('No hay servicios que coincidan con tu búsqueda.'),
+                    )
+                  : ListView.separated(
+                      itemCount: visible.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, idx) {
+                        final item = visible[idx];
+                        final isSelected =
+                            widget.selected?.claveUnica == item.claveUnica;
+                        return ListTile(
+                          leading: ServiceLogoWidget(
+                            logoUrl: item.logoUrl,
+                            name: item.nombreServicio,
+                            tipoOperacion: item.tipoOperacion,
+                            size: 38,
+                          ),
+                          title: Text(
+                            item.nombreServicio,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(
+                            '${item.nombreProducto} • ${item.tipoOperacion}${item.codigoProducto != null ? ' • Cód ${item.codigoProducto}' : ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: isSelected
+                              ? Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Theme.of(context).colorScheme.primary,
+                                )
+                              : null,
+                          onTap: () => Navigator.of(context).pop(item),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
