@@ -220,6 +220,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final bioReady = widget.appState.biometricAvailable;
     final bioStatus = widget.appState.biometricStatus;
     bool useBiometrics = bioReady;
+    bool simulateSuccess = false;
     final pinCtrl = TextEditingController();
     bool confirmedCheck = false;
     bool sendingPin = false;
@@ -240,9 +241,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
           final busy = sendingPin || verifyingBio;
 
           return AlertDialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
             title: const Text('Confirmación Explícita de Pago'),
-            content: SingleChildScrollView(
-              child: Column(
+            content: SizedBox(
+              width: double.maxFinite,
+              child: SingleChildScrollView(
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -273,6 +277,62 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   _summaryRow('Importe a pagar', AppFormatters.formatCurrency(monto)),
                   _summaryRow('Nuevo saldo estimado',
                       AppFormatters.formatCurrency(cuenta.saldo - monto)),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Modo de operación',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .labelLarge
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<bool>(
+                    key: const ValueKey('paymentSimulationToggle'),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    segments: const [
+                      ButtonSegment<bool>(
+                        value: false,
+                        icon: Icon(Icons.cloud_done_outlined, size: 18),
+                        label: Text(
+                          'Real',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      ButtonSegment<bool>(
+                        value: true,
+                        icon: Icon(Icons.science_rounded, size: 18),
+                        label: Text(
+                          'Simulación',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    selected: <bool>{simulateSuccess},
+                    onSelectionChanged: busy
+                        ? null
+                        : (sel) {
+                            setModalState(() {
+                              simulateSuccess = sel.first;
+                              dialogError = null;
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    simulateSuccess
+                        ? 'Modo simulación transparente: valida referencia, 2FA y saldo, genera ticket exitoso sin enviar cobro al proveedor real.'
+                        : 'Transacción real: se enviará directamente a PuntoRed y reflejará la respuesta real del proveedor.',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: cs.onSurfaceVariant),
+                  ),
                   const SizedBox(height: 14),
                   Text(
                     'Método de verificación 2FA',
@@ -473,6 +533,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ],
               ),
             ),
+            ),
             actions: [
               TextButton(
                 onPressed: busy ? null : () => Navigator.of(ctx).pop(null),
@@ -501,8 +562,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
                               signInHint: 'Usa tu huella o Face ID para confirmar',
                             );
                             if (ctx.mounted) {
-                              Navigator.of(ctx).pop(const <String, String>{
+                              Navigator.of(ctx).pop(<String, String>{
                                 'method': 'BIOMETRIA_MOVIL',
+                                'simular': simulateSuccess ? 'true' : 'false',
                               });
                             }
                           } on BiometricAuthException catch (e) {
@@ -530,6 +592,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         Navigator.of(ctx).pop(<String, String>{
                           'method': 'PIN_CORREO',
                           'pin': pin,
+                          'simular': simulateSuccess ? 'true' : 'false',
                         });
                       },
                 icon: verifyingBio
@@ -556,6 +619,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       await _ejecutarPago(
         metodo2fa: confirmedPayload['method'] ?? 'PIN_CORREO',
         pin2fa: confirmedPayload['pin'],
+        simularPago: confirmedPayload['simular'] == 'true',
       );
     }
   }
@@ -563,6 +627,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Future<void> _ejecutarPago({
     required String metodo2fa,
     String? pin2fa,
+    bool simularPago = false,
   }) async {
     final cuenta = _cuentaSeleccionada!;
     final srv = _servicioSeleccionado!;
@@ -608,6 +673,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       if (aval['additionalCompanyCode'] != null)
         'additionalCompanyCode': aval['additionalCompanyCode'],
       'confirmacionExplicita': true,
+      if (simularPago) 'simularPago': true,
     };
 
     try {
@@ -760,7 +826,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Realizar Pago', style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            Expanded(
+              child: Text(
+                'Realizar Pago',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ),
             TextButton.icon(
               onPressed: widget.onPickFromCatalog,
               icon: const Icon(Icons.grid_view_rounded),
@@ -1078,6 +1151,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
             const SizedBox(height: 8),
             Text(r.mensaje, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            if (r.esSimulada) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.science_rounded, size: 18, color: cs.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Simulación transparente (sin cobro real al proveedor).',
+                        style: TextStyle(
+                          color: cs.onSurface,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (isReject) ...[
               const SizedBox(height: 10),
               Container(
@@ -1156,10 +1255,18 @@ class _PaymentScreenState extends State<PaymentScreen> {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
-          const SizedBox(width: 12),
           Flexible(
+            flex: 2,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            flex: 3,
             child: Text(
               value,
               textAlign: TextAlign.end,

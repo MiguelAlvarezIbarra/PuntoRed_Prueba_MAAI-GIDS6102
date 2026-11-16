@@ -15,6 +15,8 @@ public class PagoPuntoredResponse {
     private String mensaje;
     private String estado;
     private Boolean transaccionConfirmada;
+    private Boolean simulada;
+    private String proveedor;
     private Integer idTransaccionLocal;
     private String idTransaccionProveedor;
     private String codigoAutorizacion;

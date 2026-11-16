@@ -64,6 +64,7 @@ import java.util.regex.Pattern;
 public class PuntoredPagoServiceImpl implements PuntoredPagoService {
 
     private static final String PROVEEDOR_PUNTORED = "PUNTORED";
+    private static final String PROVEEDOR_SIMULADO = "PUNTORED_SIMULADO";
     private static final String ESTADO_EXITOSA = "EXITOSA";
     private static final String ESTADO_RECHAZADA = "RECHAZADA";
     private static final String ESTADO_PENDIENTE = "PENDIENTE";
@@ -150,6 +151,14 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         String trace = tieneTexto(request.getTraceValidacion())
                 ? request.getTraceValidacion().trim()
                 : (tieneTexto(validacion.trace) ? validacion.trace : generarTraceNumerico());
+
+        if (Boolean.TRUE.equals(request.getSimularPago())) {
+            if (!properties.isPermitirSimulacion()) {
+                throw new ValidacionException(MensajeError.DATOS_NO_VALIDOS,
+                        "La simulación de pagos está deshabilitada en este entorno");
+            }
+            return procesarPagoSimulado(request, cuenta, tipoOp, trace);
+        }
 
         PuntoredHttpResult resultadoProveedor = ejecutarPagoEnProveedor(request, tipoOp, trace);
         return procesarYPersistirResultadoPago(request, cuenta, tipoOp, trace, resultadoProveedor);
@@ -580,6 +589,8 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
                         : "Operacion pendiente o no confirmada por intermitencia de red; verifica su estado en el historial"));
         response.setEstado(estado);
         response.setTransaccionConfirmada(confirmada);
+        response.setSimulada(false);
+        response.setProveedor(PROVEEDOR_PUNTORED);
         response.setIdTransaccionLocal(guardada.getId());
         response.setIdTransaccionProveedor(idTxProveedor);
         response.setCodigoAutorizacion(authCode);
@@ -602,7 +613,90 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         return response;
     }
 
+    private PagoPuntoredResponse procesarPagoSimulado(
+            PagoPuntoredRequest request,
+            Cuenta cuenta,
+            String tipoOp,
+            String trace) {
+        BigDecimal monto = limpiarMonto(request.getMonto());
+        BigDecimal saldoAnterior = limpiarMonto(cuenta.getSaldo());
+        BigDecimal saldoNuevo = limpiarMonto(saldoAnterior.subtract(monto));
+        cuenta.setSaldo(saldoNuevo);
+        cuentaRepository.save(cuenta);
+
+        String authCode = String.format("SIM%06d", random.nextInt(1_000_000));
+        String idTxProveedor = "SIM-" + trace;
+        String mensajeSimulacion = "Simulación exitosa (sin cobro real en proveedor)";
+
+        TicketData ticket = construirTicketSimulado(request, tipoOp, trace, authCode, monto);
+        TransaccionPago tx = construirEntidadTransaccion(
+                request, cuenta, tipoOp, trace, monto, idTxProveedor, authCode,
+                "00", mensajeSimulacion, ESTADO_EXITOSA, ticket
+        );
+        tx.setProveedor(PROVEEDOR_SIMULADO);
+        tx.setSenTxCifrado("SIMULACION_SANDBOX:" + trace);
+        TransaccionPago guardada = transaccionPagoRepository.save(tx);
+
+        PagoPuntoredResponse response = new PagoPuntoredResponse();
+        response.setCodigo(0);
+        response.setMensaje("Simulación de pago aplicada exitosamente (sin cargo real en proveedor)");
+        response.setEstado(ESTADO_EXITOSA);
+        response.setTransaccionConfirmada(true);
+        response.setSimulada(true);
+        response.setProveedor(PROVEEDOR_SIMULADO);
+        response.setIdTransaccionLocal(guardada.getId());
+        response.setIdTransaccionProveedor(idTxProveedor);
+        response.setCodigoAutorizacion(authCode);
+        response.setTrace(trace);
+        response.setCodigoRespuestaProveedor("00");
+        response.setMensajeProveedor(mensajeSimulacion);
+        response.setNumeroCuenta(cuenta.getNumeroCuenta());
+        response.setNombreServicio(request.getNombreServicio());
+        response.setNombreProducto(request.getNombreProducto());
+        response.setCategoria(request.getCategoria());
+        response.setLogoUrl(request.getLogoUrl());
+        response.setReferencia1(request.getReferencia1().trim());
+        response.setReferencia2(request.getReferencia2());
+        response.setMonto(monto);
+        response.setSaldoAnterior(saldoAnterior);
+        response.setSaldoNuevo(saldoNuevo);
+        response.setTicket(ticket);
+        response.setFechaRegistro(guardada.getFechaRegistro());
+        log.info("Pago simulado registrado transparentemente - idTx={} cuenta={} monto={}",
+                guardada.getId(), cuenta.getNumeroCuenta(), monto);
+        return response;
+    }
+
+    private TicketData construirTicketSimulado(
+            PagoPuntoredRequest req,
+            String tipoOp,
+            String trace,
+            String authCode,
+            BigDecimal monto) {
+        TicketData ticket = new TicketData();
+        ticket.setEncabezado("PUNTORED H2H V2 • MODO SIMULACIÓN");
+        ticket.setTitulo("COMPROBANTE SIMULADO (SIN COBRO REAL)");
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("Operación", tipoOp);
+        cuerpo.put("Servicio", req.getNombreServicio());
+        if (tieneTexto(req.getNombreProducto())) {
+            cuerpo.put("Producto", req.getNombreProducto());
+        }
+        cuerpo.put("Referencia", req.getReferencia1().trim());
+        cuerpo.put("Importe", "$" + monto);
+        cuerpo.put("Autorización", authCode);
+        cuerpo.put("Trace", trace);
+        cuerpo.put("Modalidad", "SIMULACIÓN TRANSPARENTE");
+        ticket.setCuerpo(cuerpo);
+        ticket.setPiePagina("Comprobante generado en modo simulación tras validar referencia y 2FA. No representa un cargo en PuntoRed real.");
+        ticket.setLogoUrl(req.getLogoUrl());
+        return ticket;
+    }
+
     private boolean reverificarEstadoEnPuntored(TransaccionPago tx) {
+        if (PROVEEDOR_SIMULADO.equalsIgnoreCase(tx.getProveedor())) {
+            return false;
+        }
         PuntoredHttpResult statusRes;
         if (tieneTexto(tx.getIdTxGestoPago())) {
             statusRes = postAutenticado("/query/transaction-status", Map.of(
