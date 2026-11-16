@@ -98,7 +98,7 @@ class _ClientsAdminScreenState extends State<ClientsAdminScreen> {
         builder: (ctx, setModalState) => AlertDialog(
           title: const Text('Nuevo Usuario (Admin)'),
           content: SizedBox(
-            width: 420,
+            width: double.maxFinite,
             child: SingleChildScrollView(
               child: Form(
                 key: formKey,

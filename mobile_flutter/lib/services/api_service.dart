@@ -55,7 +55,8 @@ class ApiService {
     try {
       late http.Response resp;
       final encoded = body == null ? null : jsonEncode(body);
-      const timeout = Duration(seconds: 45);
+      // Render Free puede tardar ~50s en despertar del modo suspendido.
+      const timeout = Duration(seconds: 90);
       switch (method) {
         case 'POST':
           resp = await _client.post(uri, headers: headers, body: encoded).timeout(timeout);
