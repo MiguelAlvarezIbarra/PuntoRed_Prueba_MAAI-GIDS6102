@@ -145,7 +145,7 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         String tipoOp = normalizarOperacion(request.getTipoOperacion());
         TokenValidacionPayload validacion = verificarTokenValidacion(request, infoToken, tipoOp);
         Cuenta cuenta = validarCuentaYPermisos(request.getNumeroCuenta(), infoToken, request.getMonto());
-        validarYConsumirPin2fa(cuenta.getCliente().getId(), request.getPin2fa());
+        validarAutorizacion2fa(request, cuenta.getCliente().getId());
 
         String trace = tieneTexto(request.getTraceValidacion())
                 ? request.getTraceValidacion().trim()
@@ -795,6 +795,24 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
             throw new ValidacionException(MensajeError.SALDO_INSUFICIENTE);
         }
         return cuenta;
+    }
+
+    private void validarAutorizacion2fa(PagoPuntoredRequest request, Integer clienteId) {
+        String metodo = request.getMetodo2fa() != null
+                ? request.getMetodo2fa().trim().toUpperCase(Locale.ROOT)
+                : "PIN_CORREO";
+        if ("BIOMETRIA_MOVIL".equals(metodo)) {
+            if (!Boolean.TRUE.equals(request.getBiometriaVerificada())) {
+                throw new ValidacionException(MensajeError.PIN_2FA_NO_SOLICITADO);
+            }
+            usuarioRepository.findByCliente_Id(clienteId)
+                    .orElseThrow(() -> new ValidacionException(MensajeError.CLIENTE_NO_ENCONTRADO));
+            return;
+        }
+        if (!tieneTexto(request.getPin2fa()) || !request.getPin2fa().trim().matches("^[0-9]{6}$")) {
+            throw new ValidacionException(MensajeError.PIN_2FA_NO_SOLICITADO);
+        }
+        validarYConsumirPin2fa(clienteId, request.getPin2fa().trim());
     }
 
     private void validarYConsumirPin2fa(Integer clienteId, String pinIngresado) {

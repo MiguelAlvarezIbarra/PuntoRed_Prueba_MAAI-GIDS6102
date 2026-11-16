@@ -270,17 +270,27 @@ class PagoServiceTest {
 
         Pin2faResponse resp = pagoService.enviarPin2fa(req);
         assertThat(resp.getCodigo()).isZero();
+        assertThat(resp.getCorreoEnviado()).isTrue();
         assertThat(resp.getPin2fa()).matches("^\\d{6}$");
         verify(usuarioRepository).save(usuario);
 
         // Con mostrarPinEnRespuesta = false y envio SMTP exitoso
         ReflectionTestUtils.setField(pagoService, "mostrarPinEnRespuesta", false);
-        assertThat(pagoService.enviarPin2fa(req).getPin2fa()).isNull();
+        Pin2faResponse respOculto = pagoService.enviarPin2fa(req);
+        assertThat(respOculto.getCorreoEnviado()).isTrue();
+        assertThat(respOculto.getPin2fa()).isNull();
 
-        // Simulando fallo de SMTP y correo nulo
+        // Simulando fallo de SMTP real y correos invalidos/nulos
         doThrow(new RuntimeException("SMTP error")).when(mailSender).send(any(SimpleMailMessage.class));
+        Pin2faResponse respFalloSmtp = pagoService.enviarPin2fa(req);
+        assertThat(respFalloSmtp.getCorreoEnviado()).isFalse();
+        assertThat(respFalloSmtp.getPin2fa()).matches("^\\d{6}$");
+
         clienteActivo.setCorreo(null);
-        assertThat(pagoService.enviarPin2fa(req).getCorreoDestino()).isEqualTo("***");
+        Pin2faResponse respSinCorreo = pagoService.enviarPin2fa(req);
+        assertThat(respSinCorreo.getCorreoDestino()).isEqualTo("***");
+        assertThat(respSinCorreo.getCorreoEnviado()).isFalse();
+        assertThat(respSinCorreo.getPin2fa()).matches("^\\d{6}$");
         clienteActivo.setCorreo("invalido");
         Pin2faResponse respFallback = pagoService.enviarPin2fa(req);
         assertThat(respFallback.getCorreoDestino()).isEqualTo("***");

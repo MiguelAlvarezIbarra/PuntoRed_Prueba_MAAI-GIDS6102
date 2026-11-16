@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import '../core/constants.dart';
 import '../core/formatters.dart';
+import '../services/biometric_service.dart';
 import '../state/app_state.dart';
 import '../widgets/common_widgets.dart';
 
 class AuthScreen extends StatefulWidget {
   final AppState appState;
+  final bool autoPromptBiometrics;
 
-  const AuthScreen({super.key, required this.appState});
+  const AuthScreen({
+    super.key,
+    required this.appState,
+    this.autoPromptBiometrics = true,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -18,6 +24,8 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _loading = false;
   bool _obscureLoginPwd = true;
   bool _obscureRegPwd = true;
+  bool _useBiometric2fa = true;
+  bool _autoPromptDispatched = false;
   String? _errorMessage;
   String? _successMessage;
 
@@ -58,6 +66,31 @@ class _AuthScreenState extends State<AuthScreen> {
   String _pais = AppConstants.paises.first;
 
   @override
+  void initState() {
+    super.initState();
+    _useBiometric2fa = widget.appState.biometricAvailable
+        ? widget.appState.biometric2faEnabled
+        : false;
+    final savedEmail = widget.appState.savedBiometricEmail;
+    if (savedEmail != null &&
+        savedEmail.isNotEmpty &&
+        _loginEmailCtrl.text.isEmpty) {
+      _loginEmailCtrl.text = savedEmail;
+    }
+    if (widget.autoPromptBiometrics &&
+        widget.appState.biometricAvailable &&
+        widget.appState.hasSavedBiometricAccount &&
+        widget.appState.biometric2faEnabled &&
+        !widget.appState.lastLogoutWasManual) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _autoPromptDispatched || _loading) return;
+        _autoPromptDispatched = true;
+        _submitBiometricLogin(silentOnCancel: true);
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _loginEmailCtrl.dispose();
     _loginPwdCtrl.dispose();
@@ -96,7 +129,38 @@ class _AuthScreenState extends State<AuthScreen> {
       await widget.appState.login(
         _loginEmailCtrl.text.trim(),
         _loginPwdCtrl.text,
+        enableBiometric2fa:
+            widget.appState.biometricAvailable ? _useBiometric2fa : false,
       );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = e.toString());
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submitBiometricLogin({bool silentOnCancel = false}) async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+    try {
+      await widget.appState.loginWithBiometrics();
+    } on BiometricAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          if (silentOnCancel && e.wasCanceled) {
+            _successMessage =
+                'Verificación pendiente: toca entrar con huella/Face ID o usa tu contraseña.';
+          } else {
+            _errorMessage = e.message;
+          }
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = e.toString());
@@ -235,7 +299,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                     style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                                   ),
                                   Text(
-                                    'Plataforma H2H V2 • Web & Móvil',
+                                    'Plataforma H2H V2 • App Móvil',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
@@ -384,20 +448,116 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildLoginForm(TextTheme tt, ColorScheme cs) {
+    final appState = widget.appState;
+    final showQuickBiometric =
+        appState.biometricAvailable && appState.hasSavedBiometricAccount;
+    final bioIcon = (appState.biometricStatus.supportsFace &&
+            !appState.biometricStatus.supportsFingerprint)
+        ? Icons.face_retouching_natural_rounded
+        : Icons.fingerprint_rounded;
+
     return Form(
       key: _loginFormKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Acceso unificado Web & Móvil',
+            'Acceso Seguro PuntoRed Móvil',
             style: tt.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
-            'Usa las mismas credenciales registradas en la plataforma para consultar servicios, validar referencias y pagar.',
+            'Usa tus credenciales registradas en la plataforma con protección biométrica 2FA para consultar servicios y pagar.',
             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
+          if (showQuickBiometric) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: cs.primary.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: cs.primary,
+                        foregroundColor: cs.onPrimary,
+                        child: Icon(bioIcon),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Acceso rápido 2FA',
+                              style: tt.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              appState.savedBiometricEmail ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    key: const ValueKey('biometricLoginButton'),
+                    onPressed: _loading ? null : () => _submitBiometricLogin(),
+                    icon: Icon(bioIcon),
+                    label: Text(
+                      'Entrar con ${appState.biometricStatus.shortLabel}',
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      key: const ValueKey('unlinkBiometricButton'),
+                      onPressed: _loading
+                          ? null
+                          : () async {
+                              await appState.unlinkBiometricAccount();
+                              if (mounted) {
+                                setState(() {
+                                  _loginEmailCtrl.clear();
+                                  _useBiometric2fa = false;
+                                });
+                              }
+                            },
+                      child: const Text('Desvincular cuenta biométrica'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                const Expanded(child: Divider()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    'o ingresa con contraseña',
+                    style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ),
+                const Expanded(child: Divider()),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           TextFormField(
             key: const ValueKey('loginEmailField'),
@@ -425,9 +585,12 @@ class _AuthScreenState extends State<AuthScreen> {
               prefixIcon: const Icon(Icons.lock_outline_rounded),
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
-                onPressed: () => setState(() => _obscureLoginPwd = !_obscureLoginPwd),
+                onPressed: () =>
+                    setState(() => _obscureLoginPwd = !_obscureLoginPwd),
                 icon: Icon(
-                  _obscureLoginPwd ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                  _obscureLoginPwd
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
                 ),
               ),
             ),
@@ -436,6 +599,49 @@ class _AuthScreenState extends State<AuthScreen> {
               return null;
             },
           ),
+          if (appState.biometricAvailable) ...[
+            const SizedBox(height: 10),
+            SwitchListTile.adaptive(
+              key: const ValueKey('biometric2faSwitch'),
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(Icons.verified_user_outlined, color: cs.primary),
+              title: Text(
+                '2FA con ${appState.biometricStatus.shortLabel}',
+                style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                'Verificar biometría al entrar y guardar acceso rápido cifrado',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              value: _useBiometric2fa,
+              onChanged: _loading
+                  ? null
+                  : (v) => setState(() => _useBiometric2fa = v),
+            ),
+          ] else if (appState.biometricStatus.hardwareAvailable &&
+              !appState.biometricStatus.hasEnrolledBiometrics) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 18, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Registra huella o Face ID en Ajustes del celular para habilitar el 2FA biométrico.',
+                      style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           FilledButton.icon(
             key: const ValueKey('loginSubmitButton'),
@@ -447,7 +653,13 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.login_rounded),
-            label: Text(_loading ? 'Validando acceso...' : 'Entrar a la Plataforma'),
+            label: Text(
+              _loading
+                  ? (appState.biometricAvailable && _useBiometric2fa
+                      ? 'Validando acceso y 2FA...'
+                      : 'Validando acceso...')
+                  : 'Entrar a la Plataforma',
+            ),
           ),
         ],
       ),

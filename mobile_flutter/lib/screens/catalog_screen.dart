@@ -233,25 +233,39 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                           ),
                                         ],
                                         const SizedBox(height: 8),
-                                        Row(
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          crossAxisAlignment:
+                                              WrapCrossAlignment.center,
+                                          alignment:
+                                              WrapAlignment.spaceBetween,
                                           children: [
-                                            Chip(
-                                              visualDensity: VisualDensity.compact,
-                                              label: Text(
-                                                item.tipoOperacion,
-                                                style: const TextStyle(fontSize: 11),
-                                              ),
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 4,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              children: [
+                                                Chip(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  label: Text(
+                                                    item.tipoOperacion,
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (item.codigoProducto != null)
+                                                  Text(
+                                                    'Cód: ${item.codigoProducto}',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .labelSmall,
+                                                  ),
+                                              ],
                                             ),
-                                            if (item.codigoProducto != null) ...[
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                'Cód: ${item.codigoProducto}',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall,
-                                              ),
-                                            ],
-                                            const Spacer(),
                                             FilledButton.tonalIcon(
                                               onPressed: () =>
                                                   widget.onSelectServicio(item),

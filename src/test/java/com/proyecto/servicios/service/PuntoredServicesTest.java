@@ -398,6 +398,52 @@ class PuntoredServicesTest {
         assertThat(ctaCtrl.obtenerMisCuentas("Bearer ok").getBody().getCuentas()).hasSize(1);
     }
 
+    @Test
+    void realizarPago_permiteBiometriaMovilCuandoEstaVerificadaYRechazaSiFalta() throws Exception {
+        InfoToken owner = new InfoToken(7, Roles.USUARIO_NORMAL);
+        Cuenta cuenta = crearCuentaConSaldo(7, new BigDecimal("50000.00"));
+        Usuario usuario = crearUsuarioConPin(PIN_2FA);
+        usuario.setPin2faHash(null);
+        usuario.setPin2faExpiracion(null);
+
+        when(cuentaRepository.findByNumeroCuenta(CUENTA_18)).thenReturn(Optional.of(cuenta));
+        when(usuarioRepository.findByCliente_Id(7)).thenReturn(Optional.of(usuario));
+        when(transaccionPagoRepository.save(any(TransaccionPago.class))).thenAnswer(inv -> {
+            TransaccionPago tx = inv.getArgument(0);
+            tx.setId(88);
+            tx.setFechaRegistro(LocalDateTime.now(ZoneId.systemDefault()));
+            return tx;
+        });
+
+        ValidarReferenciaRequest valReq = new ValidarReferenciaRequest();
+        valReq.setTipoOperacion("RECARGA");
+        valReq.setCodigoProducto("737");
+        valReq.setReferencia1("3001234567");
+        ValidacionReferenciaResponse valRes = pagoService.validarReferencia(valReq, owner);
+
+        PagoPuntoredRequest reqSinConfirmar = construirPagoRequest(valRes, new BigDecimal("10000.00"));
+        reqSinConfirmar.setPin2fa(null);
+        reqSinConfirmar.setMetodo2fa("BIOMETRIA_MOVIL");
+        reqSinConfirmar.setBiometriaVerificada(false);
+        assertThat(reqSinConfirmar.isAutorizacion2faValida()).isFalse();
+        assertThatThrownBy(() -> pagoService.realizarPago(reqSinConfirmar, owner))
+                .isInstanceOf(ValidacionException.class)
+                .extracting("codigo").isEqualTo(MensajeError.PIN_2FA_NO_SOLICITADO.getCodigo());
+
+        PagoPuntoredRequest reqBiometria = construirPagoRequest(valRes, new BigDecimal("10000.00"));
+        reqBiometria.setPin2fa(null);
+        reqBiometria.setMetodo2fa("BIOMETRIA_MOVIL");
+        reqBiometria.setBiometriaVerificada(true);
+        assertThat(reqBiometria.isAutorizacion2faValida()).isTrue();
+
+        when(apiClient.postJson(eq("/recharge/buy"), any(), anyString()))
+                .thenReturn(okResult("{\"state\":true,\"code\":\"00\",\"message\":\"Exitoso\",\"data\":{\"transactionId\":\"BIO-1\",\"authorizationCode\":\"AUT-BIO\",\"trace\":\"" + valRes.getTrace() + "\",\"message\":\"OK\"}}"));
+
+        PagoPuntoredResponse resp = pagoService.realizarPago(reqBiometria, owner);
+        assertThat(resp.getEstado()).isEqualTo("EXITOSA");
+        assertThat(resp.getSaldoNuevo()).isEqualByComparingTo("40000.00");
+    }
+
     private PuntoredHttpResult okResult(String json) throws Exception {
         return new PuntoredHttpResult(200, false, false, objectMapper.readTree(json), json);
     }

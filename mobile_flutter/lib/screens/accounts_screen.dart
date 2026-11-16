@@ -202,13 +202,18 @@ class _AccountsScreenState extends State<AccountsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            AppFormatters.formatAccountNumber(cuenta.numeroCuenta),
-                            style: tt.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'monospace',
+                          Expanded(
+                            child: Text(
+                              AppFormatters.formatAccountNumber(cuenta.numeroCuenta),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.titleSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'monospace',
+                              ),
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Chip(
                             label: Text(cuenta.estatus),
                             visualDensity: VisualDensity.compact,

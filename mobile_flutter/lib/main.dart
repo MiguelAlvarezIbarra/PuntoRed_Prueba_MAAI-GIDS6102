@@ -140,7 +140,7 @@ class _MainShellState extends State<MainShell> {
       ),
     );
     if (confirm == true) {
-      await widget.appState.logout();
+      await widget.appState.logout(manual: true);
     }
   }
 
@@ -188,7 +188,14 @@ class _MainShellState extends State<MainShell> {
     final isAdmin = widget.appState.isAdmin;
     final currentNavIndex = _tabIndex > 4 ? 0 : _tabIndex;
 
-    return Scaffold(
+    return PopScope(
+      canPop: _tabIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _tabIndex != 0) {
+          _navigateTo(0);
+        }
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
@@ -314,6 +321,7 @@ class _MainShellState extends State<MainShell> {
                 ),
               ],
             ),
+      ),
     );
   }
 }
