@@ -447,6 +447,11 @@ void main() {
     testWidgets(
         'PaymentScreen permite alternar entre Huella/Face y Correo y autocompleta PIN sin SMTP',
         (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       SharedPreferences.setMockInitialValues({});
       final vault = _MemorySecureVault();
       final driver = _FakeBiometricDriver();
@@ -454,6 +459,7 @@ void main() {
 
       String? capturedMetodo2fa;
       bool? capturedBiometria;
+      bool? capturedSimularPago;
 
       final client = MockClient((req) async {
         final path = req.url.path;
@@ -533,12 +539,15 @@ void main() {
           final body = jsonDecode(req.body) as Map<String, dynamic>;
           capturedMetodo2fa = body['metodo2fa']?.toString();
           capturedBiometria = body['biometriaVerificada'] as bool?;
+          capturedSimularPago = body['simularPago'] as bool?;
           return http.Response(
             jsonEncode({
               'codigo': 0,
-              'mensaje': 'Pago exitoso',
+              'mensaje': 'Simulación de pago aplicada exitosamente',
               'estado': 'EXITOSA',
               'transaccionConfirmada': true,
+              'simulada': capturedSimularPago == true,
+              'proveedor': capturedSimularPago == true ? 'PUNTORED_SIMULADO' : 'PUNTORED',
               'idTransaccionLocal': 99,
               'numeroCuenta': '848380128311868821',
               'nombreServicio': 'TELCEL',
@@ -595,24 +604,38 @@ void main() {
       await tester.tap(openBtn);
       await tester.pumpAndSettle();
 
-      // Inicia con Huella/Face seleccionado
+      // Inicia con modo Real y Huella/Face seleccionado
+      expect(find.byKey(const ValueKey('paymentSimulationToggle')), findsOneWidget);
       expect(find.byKey(const ValueKey('payment2faMethodToggle')), findsOneWidget);
       expect(find.byKey(const ValueKey('biometricPaymentBox')), findsOneWidget);
       expect(find.text('Autorizar con Huella'), findsOneWidget);
 
+      // Cambiar modo a Simulación
+      await tester.ensureVisible(find.text('Simulación'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Simulación'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Modo simulación transparente'), findsOneWidget);
+
       // Cambiar toggle a Correo y solicitar PIN
       await tester.tap(find.text('Correo'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('sendPinEmailButton')), findsOneWidget);
+      final sendPinBtn = find.byKey(const ValueKey('sendPinEmailButton'));
+      expect(sendPinBtn, findsOneWidget);
+      await tester.ensureVisible(sendPinBtn);
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('sendPinEmailButton')));
+      await tester.tap(sendPinBtn);
       await tester.pumpAndSettle();
       expect(find.textContaining('PIN temporal autocompletado: 654321'), findsOneWidget);
 
-      // Volver a Huella/Face, marcar checkbox y autorizar pago biométrico
+      // Volver a Huella/Face, marcar checkbox y autorizar pago simulado biométrico
+      await tester.ensureVisible(find.text('Huella/Face'));
       await tester.tap(find.text('Huella/Face'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('confirmExplicitCheckbox')));
+      final checkBox = find.byKey(const ValueKey('confirmExplicitCheckbox'));
+      await tester.ensureVisible(checkBox);
+      await tester.tap(checkBox);
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('authorizePaymentButton')));
@@ -621,12 +644,14 @@ void main() {
       expect(driver.authenticateCalls, 2); // 1 en login + 1 al autorizar pago
       expect(capturedMetodo2fa, 'BIOMETRIA_MOVIL');
       expect(capturedBiometria, isTrue);
+      expect(capturedSimularPago, isTrue);
       await tester.scrollUntilVisible(
         find.text('Resultado de la Operación'),
         200,
         scrollable: mainScrollable,
       );
       expect(find.text('Resultado de la Operación'), findsOneWidget);
+      expect(find.textContaining('Simulación transparente'), findsOneWidget);
     });
   });
 }

@@ -317,6 +317,8 @@ class PagoPuntoredResponse {
   final String mensaje;
   final String estado;
   final bool transaccionConfirmada;
+  final bool? simulada;
+  final String? proveedor;
   final int? idTransaccionLocal;
   final String? idTransaccionProveedor;
   final String? codigoAutorizacion;
@@ -340,6 +342,8 @@ class PagoPuntoredResponse {
     required this.mensaje,
     required this.estado,
     required this.transaccionConfirmada,
+    this.simulada,
+    this.proveedor,
     this.idTransaccionLocal,
     this.idTransaccionProveedor,
     this.codigoAutorizacion,
@@ -365,6 +369,8 @@ class PagoPuntoredResponse {
       mensaje: json['mensaje']?.toString() ?? '',
       estado: json['estado']?.toString() ?? 'PENDIENTE',
       transaccionConfirmada: json['transaccionConfirmada'] == true,
+      simulada: json['simulada'] as bool?,
+      proveedor: json['proveedor']?.toString(),
       idTransaccionLocal:
           json['idTransaccionLocal'] == null ? null : _asInt(json['idTransaccionLocal']),
       idTransaccionProveedor: json['idTransaccionProveedor']?.toString(),
@@ -387,6 +393,9 @@ class PagoPuntoredResponse {
       fechaRegistro: json['fechaRegistro']?.toString(),
     );
   }
+
+  bool get esSimulada =>
+      simulada == true || proveedor?.toUpperCase() == 'PUNTORED_SIMULADO';
 }
 
 class HistorialPagoItem {
