@@ -17,5 +17,6 @@ public class Pin2faResponse extends GenericResponse {
     private String numeroCuenta;
     private String correoDestino;
     private Long expiraEnSegundos;
+    private Boolean correoEnviado;
     private String pin2fa;
 }

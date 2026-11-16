@@ -98,9 +98,10 @@ public class PagoServiceImpl implements PagoService {
 
         Pin2faResponse response = new Pin2faResponse();
         response.setCodigo(0);
+        response.setCorreoEnviado(enviadoSmtp);
         response.setMensaje(enviadoSmtp
                 ? "PIN de autenticación 2FA enviado al correo del cliente"
-                : "PIN de autenticación 2FA generado para el correo del cliente");
+                : "Servidor sin proveedor de correo activo; se generó PIN temporal en pantalla");
         response.setNumeroCuenta(cuenta.getNumeroCuenta());
         response.setCorreoDestino(enmascararCorreo(cliente.getCorreo()));
         response.setExpiraEnSegundos(expiracionPinMinutos * 60);
