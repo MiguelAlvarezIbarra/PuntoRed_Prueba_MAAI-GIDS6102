@@ -27,6 +27,8 @@ class PaymentScreen extends StatefulWidget {
 }
 
 class _PaymentScreenState extends State<PaymentScreen> {
+  final _scrollCtrl = ScrollController();
+  final _resultCardKey = GlobalKey();
   final _ref1Ctrl = TextEditingController();
   final _ref2Ctrl = TextEditingController();
   final _montoCtrl = TextEditingController();
@@ -84,6 +86,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   @override
   void dispose() {
+    _scrollCtrl.dispose();
     _ref1Ctrl.dispose();
     _ref2Ctrl.dispose();
     _montoCtrl.dispose();
@@ -646,6 +649,28 @@ class _PaymentScreenState extends State<PaymentScreen> {
         setState(() {
           _resultadoPago = resp;
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = _resultCardKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(
+              ctx,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+        final norm = resp.estado.toUpperCase();
+        final snackText = norm == 'EXITOSA'
+            ? 'Pago aplicado correctamente (${AppFormatters.formatCurrency(resp.monto)}).'
+            : (norm == 'RECHAZADA'
+                ? 'Pago rechazado por PuntoRed${resp.codigoRespuestaProveedor != null ? ' (${resp.codigoRespuestaProveedor})' : ''}. No se descontó saldo.'
+                : 'Operación en estado $norm. Consulta el detalle abajo.');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(snackText),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -729,6 +754,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final validacionOk = _validacion?.referenciaValida == true;
 
     return ListView(
+      controller: _scrollCtrl,
       padding: const EdgeInsets.all(16),
       children: [
         Row(
@@ -1022,6 +1048,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final isReject = norm == 'RECHAZADA';
 
     return Card(
+      key: _resultCardKey,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
@@ -1051,10 +1078,28 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
             const SizedBox(height: 8),
             Text(r.mensaje, style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            if (isReject) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: cs.errorContainer.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  r.codigoRespuestaProveedor == 'HE11'
+                      ? 'PuntoRed en ambiente de pruebas rechazó esta operación (código HE11). No se realizó ningún descuento a tu cuenta.'
+                      : 'La operación fue rechazada por el proveedor. Tu saldo permanece intacto.',
+                  style: TextStyle(color: cs.onErrorContainer, fontSize: 12),
+                ),
+              ),
+            ],
             const Divider(height: 18),
             _summaryRow('Servicio', r.nombreServicio),
             _summaryRow('Referencia', r.referencia1),
             _summaryRow('Importe', AppFormatters.formatCurrency(r.monto)),
+            if (r.codigoRespuestaProveedor != null && r.codigoRespuestaProveedor!.isNotEmpty)
+              _summaryRow('Código proveedor', r.codigoRespuestaProveedor!),
             if (r.codigoAutorizacion != null && r.codigoAutorizacion!.isNotEmpty)
               _summaryRow('Autorización / Folio', r.codigoAutorizacion!),
             if (r.idTransaccionProveedor != null && r.idTransaccionProveedor!.isNotEmpty)

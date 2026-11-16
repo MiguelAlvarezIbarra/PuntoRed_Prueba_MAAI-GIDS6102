@@ -298,6 +298,14 @@ class PagoServiceTest {
         // Sin remitente configurado
         ReflectionTestUtils.setField(correo2faService, "remitente", "");
         assertThat(correo2faService.enviarPinPorCorreo("a@b.com", "Juan", "123456")).isFalse();
+
+        // Verifica que el template HTML escapa caracteres peligrosos e incluye el PIN
+        String htmlGenerado = ReflectionTestUtils.invokeMethod(
+                correo2faService, "construirMensajeHtml", "Miguel <Admin>", "654321");
+        assertThat(htmlGenerado)
+                .contains("Miguel &lt;Admin&gt;")
+                .contains("654321")
+                .contains("PuntoRed");
     }
 
     @Test

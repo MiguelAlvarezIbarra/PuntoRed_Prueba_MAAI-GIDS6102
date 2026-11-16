@@ -322,6 +322,7 @@ class PagoPuntoredResponse {
   final String? codigoAutorizacion;
   final String? trace;
   final String? pinContenido;
+  final String? codigoRespuestaProveedor;
   final String? mensajeProveedor;
   final String numeroCuenta;
   final String nombreServicio;
@@ -344,6 +345,7 @@ class PagoPuntoredResponse {
     this.codigoAutorizacion,
     this.trace,
     this.pinContenido,
+    this.codigoRespuestaProveedor,
     this.mensajeProveedor,
     required this.numeroCuenta,
     required this.nombreServicio,
@@ -369,6 +371,7 @@ class PagoPuntoredResponse {
       codigoAutorizacion: json['codigoAutorizacion']?.toString(),
       trace: json['trace']?.toString(),
       pinContenido: json['pinContenido']?.toString(),
+      codigoRespuestaProveedor: json['codigoRespuestaProveedor']?.toString(),
       mensajeProveedor: json['mensajeProveedor']?.toString(),
       numeroCuenta: json['numeroCuenta']?.toString() ?? '',
       nombreServicio: json['nombreServicio']?.toString() ?? '',

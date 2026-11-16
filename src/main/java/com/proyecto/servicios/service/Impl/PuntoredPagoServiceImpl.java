@@ -539,9 +539,16 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         String authCode = data != null ? textoOpcional(data.path("authorizationCode")) : null;
         String pinContenido = data != null ? textoOpcional(data.path("pin")) : null;
         String codigoProveedor = result.obtenerCodigo();
-        String mensajeProveedor = data != null && tieneTexto(textoOpcional(data.path("message")))
-                ? textoOpcional(data.path("message"))
-                : result.obtenerMensaje();
+        String msgRaiz = result.obtenerMensaje();
+        String msgData = data != null ? textoOpcional(data.path("message")) : null;
+        String mensajeProveedor;
+        if (!tieneTexto(msgData) || msgData.equals(request.getReferencia1().trim())) {
+            mensajeProveedor = tieneTexto(msgRaiz)
+                    ? msgRaiz + (tieneTexto(codigoProveedor) ? " (" + codigoProveedor + ")" : "")
+                    : "Rechazado por PuntoRed (" + codigoProveedor + ")";
+        } else {
+            mensajeProveedor = msgData;
+        }
 
         String estado;
         boolean confirmada = false;
