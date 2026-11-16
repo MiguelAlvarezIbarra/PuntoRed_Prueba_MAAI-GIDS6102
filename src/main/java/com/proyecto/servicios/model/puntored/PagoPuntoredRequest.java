@@ -71,6 +71,11 @@ public class PagoPuntoredRequest {
 
     private Boolean biometriaVerificada;
 
+    /**
+     * Modo opcional de simulacion transparente en sandbox (solo si esta habilitado en el servidor).
+     */
+    private Boolean simularPago;
+
     @Pattern(regexp = "^([0-9]{6})?$", message = "Código 1: El PIN 2FA debe tener exactamente 6 dígitos")
     private String pin2fa;
 

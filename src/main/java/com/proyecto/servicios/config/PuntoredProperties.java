@@ -25,6 +25,7 @@ public class PuntoredProperties {
     private long tokenRefreshMs = 3600000L;
     private int connectTimeoutMs = 10000;
     private int readTimeoutMs = 25000;
+    private boolean permitirSimulacion = true;
 
     public boolean tieneCredencialesConfiguradas() {
         return tieneTexto(url)

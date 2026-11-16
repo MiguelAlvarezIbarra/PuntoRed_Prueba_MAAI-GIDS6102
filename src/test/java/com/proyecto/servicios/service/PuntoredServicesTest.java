@@ -444,6 +444,49 @@ class PuntoredServicesTest {
         assertThat(resp.getSaldoNuevo()).isEqualByComparingTo("40000.00");
     }
 
+    @Test
+    void realizarPago_simulacionTransparenteDescuentaSaldoYNoLlamaProveedorExterno() {
+        InfoToken owner = new InfoToken(7, Roles.USUARIO_NORMAL);
+        Cuenta cuenta = crearCuentaConSaldo(7, new BigDecimal("50000.00"));
+        Usuario usuario = crearUsuarioConPin(PIN_2FA);
+
+        when(cuentaRepository.findByNumeroCuenta(CUENTA_18)).thenReturn(Optional.of(cuenta));
+        when(usuarioRepository.findByCliente_Id(7)).thenReturn(Optional.of(usuario));
+        when(transaccionPagoRepository.save(any(TransaccionPago.class))).thenAnswer(inv -> {
+            TransaccionPago tx = inv.getArgument(0);
+            tx.setId(101);
+            tx.setFechaRegistro(LocalDateTime.now(ZoneId.systemDefault()));
+            return tx;
+        });
+
+        ValidarReferenciaRequest valReq = new ValidarReferenciaRequest();
+        valReq.setTipoOperacion("RECARGA");
+        valReq.setCodigoProducto("906");
+        valReq.setReferencia1("3001234567");
+        ValidacionReferenciaResponse valRes = pagoService.validarReferencia(valReq, owner);
+
+        PagoPuntoredRequest reqSim = construirPagoRequest(valRes, new BigDecimal("2000.00"));
+        reqSim.setPin2fa(null);
+        reqSim.setMetodo2fa("BIOMETRIA_MOVIL");
+        reqSim.setBiometriaVerificada(true);
+        reqSim.setSimularPago(true);
+
+        PagoPuntoredResponse resp = pagoService.realizarPago(reqSim, owner);
+        assertThat(resp.getEstado()).isEqualTo("EXITOSA");
+        assertThat(resp.getSimulada()).isTrue();
+        assertThat(resp.getProveedor()).isEqualTo("PUNTORED_SIMULADO");
+        assertThat(resp.getCodigoAutorizacion()).startsWith("SIM");
+        assertThat(resp.getTicket().getTitulo()).contains("SIMULADO");
+        assertThat(resp.getSaldoNuevo()).isEqualByComparingTo("48000.00");
+        verify(apiClient, never()).postJson(eq("/recharge/buy"), any(), anyString());
+
+        properties.setPermitirSimulacion(false);
+        assertThatThrownBy(() -> pagoService.realizarPago(reqSim, owner))
+                .isInstanceOf(ValidacionException.class)
+                .extracting("codigo").isEqualTo(MensajeError.DATOS_NO_VALIDOS.getCodigo());
+        properties.setPermitirSimulacion(true);
+    }
+
     private PuntoredHttpResult okResult(String json) throws Exception {
         return new PuntoredHttpResult(200, false, false, objectMapper.readTree(json), json);
     }
