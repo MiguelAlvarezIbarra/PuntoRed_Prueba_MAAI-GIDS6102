@@ -178,6 +178,7 @@ export interface Pin2faResponse extends GenericResponse {
   numeroCuenta: string;
   correoDestino: string;
   expiraEnSegundos: number;
+  correoEnviado?: boolean;
   pin2fa?: string;
 }
 
@@ -374,12 +375,17 @@ export interface PagoPuntoredRequest {
   accountDataAcredited?: string | null;
   additionalCompanyCode?: string | null;
   confirmacionExplicita: boolean;
-  pin2fa: string;
+  metodo2fa?: 'PIN_CORREO' | 'BIOMETRIA_MOVIL';
+  biometriaVerificada?: boolean;
+  simularPago?: boolean;
+  pin2fa?: string;
 }
 
 export interface PagoPuntoredResponse extends GenericResponse {
   estado: EstadoTransaccion;
   transaccionConfirmada: boolean;
+  simulada?: boolean | null;
+  proveedor?: string | null;
   idTransaccionLocal?: number | null;
   idTransaccionProveedor?: string | null;
   codigoAutorizacion?: string | null;

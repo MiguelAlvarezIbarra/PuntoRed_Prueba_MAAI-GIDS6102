@@ -213,6 +213,14 @@ export const HistorialPage: React.FC = () => {
                           <i className={`bi ${badge.icon} me-1`} />
                           {badge.label}
                         </span>
+                        {item.proveedor?.toUpperCase() === 'PUNTORED_SIMULADO' && (
+                          <div className="mt-1">
+                            <span className="badge text-bg-info">
+                              <i className="bi bi-flask me-1" />
+                              Simulación
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="text-end">
                         <button
@@ -272,9 +280,14 @@ export const HistorialPage: React.FC = () => {
                     <div className="fs-4 fw-bold text-primary">
                       {formatCurrency(selectedItem.monto)}
                     </div>
-                    <span className={`badge ${getEstadoBadge(selectedItem.estado).cls}`}>
-                      {getEstadoBadge(selectedItem.estado).label}
-                    </span>
+                    <div className="d-flex justify-content-end gap-1 flex-wrap mt-1">
+                      {selectedItem.proveedor?.toUpperCase() === 'PUNTORED_SIMULADO' && (
+                        <span className="badge text-bg-info">Simulación</span>
+                      )}
+                      <span className={`badge ${getEstadoBadge(selectedItem.estado).cls}`}>
+                        {getEstadoBadge(selectedItem.estado).label}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

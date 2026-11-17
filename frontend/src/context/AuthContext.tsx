@@ -7,6 +7,13 @@ import {
   setStoredToken,
   setUnauthorizedHandler,
 } from '../services/apiClient';
+import {
+  clearDevice2fa,
+  type DeviceAuthStatus,
+  getDeviceAuthStatus,
+  setDevice2faEnabledOnly,
+  verifyWithDevicePrompt,
+} from '../services/deviceAuthService';
 import type { AuthSession, LoginRequest } from '../types/api';
 
 const STORAGE_SESSION_KEY = 'puntored_auth_session';
@@ -19,14 +26,27 @@ interface AuthContextValue {
   isAdmin: boolean;
   theme: ThemeMode;
   apiBaseUrl: string;
+  deviceAuthStatus: DeviceAuthStatus;
+  refreshDeviceAuthStatus: () => Promise<DeviceAuthStatus>;
+  setDevice2faEnabled: (enabled: boolean) => Promise<void>;
+  unlinkDevice2fa: () => Promise<void>;
   toggleTheme: () => void;
   updateApiBaseUrl: (url: string) => void;
-  login: (credentials: LoginRequest) => Promise<AuthSession>;
+  login: (credentials: LoginRequest, options?: { requireDevice2fa?: boolean }) => Promise<AuthSession>;
   logout: () => Promise<void>;
   clearLocalSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const INITIAL_DEVICE_STATUS: DeviceAuthStatus = {
+  supported: false,
+  secureContext: false,
+  platformAvailable: false,
+  enabled: false,
+  linkedEmail: null,
+  hasCredential: false,
+};
 
 function readStoredSession(): AuthSession | null {
   try {
@@ -54,6 +74,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<AuthSession | null>(() => readStoredSession());
   const [theme, setTheme] = useState<ThemeMode>(() => readInitialTheme());
   const [apiBaseUrl, setApiBaseUrlState] = useState<string>(() => getApiBaseUrl());
+  const [deviceAuthStatus, setDeviceAuthStatus] = useState<DeviceAuthStatus>(INITIAL_DEVICE_STATUS);
+
+  const refreshDeviceAuthStatus = useCallback(async () => {
+    const status = await getDeviceAuthStatus();
+    setDeviceAuthStatus(status);
+    return status;
+  }, []);
+
+  useEffect(() => {
+    void refreshDeviceAuthStatus();
+  }, [refreshDeviceAuthStatus]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-bs-theme', theme);
@@ -95,21 +126,75 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.clearTimeout(timer);
   }, [session, clearLocalSession]);
 
-  const login = useCallback(async (credentials: LoginRequest): Promise<AuthSession> => {
-    const resp = await api.login(credentials);
-    const nextSession: AuthSession = {
-      jwt: resp.jwt,
-      clienteId: resp.clienteId,
-      rol: resp.rol === ROLES.ADMIN ? 1 : 2,
-      correo: credentials.correo,
-      expiraEnSegundos: resp.expiraEnSegundos || 900,
-      loginAt: Date.now(),
-    };
-    setStoredToken(nextSession.jwt);
-    localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(nextSession));
-    setSession(nextSession);
-    return nextSession;
-  }, []);
+  const login = useCallback(
+    async (
+      credentials: LoginRequest,
+      options?: { requireDevice2fa?: boolean },
+    ): Promise<AuthSession> => {
+      const cleanEmail = credentials.correo.trim();
+      const resp = await api.login({ correo: cleanEmail, password: credentials.password });
+
+      const currentStatus = await getDeviceAuthStatus();
+      const autoLinked =
+        currentStatus.enabled &&
+        currentStatus.linkedEmail?.toLowerCase() === cleanEmail.toLowerCase();
+      const shouldVerifyDevice = options?.requireDevice2fa ?? autoLinked;
+
+      if (shouldVerifyDevice) {
+        setStoredToken(resp.jwt);
+        try {
+          await verifyWithDevicePrompt(cleanEmail, { enable2faPreference: true });
+        } catch (err) {
+          try {
+            await api.logout();
+          } catch {
+            // Si falla revocación remota igual limpiamos localmente.
+          }
+          setStoredToken(null);
+          throw err;
+        }
+        await refreshDeviceAuthStatus();
+      } else if (options?.requireDevice2fa === false && currentStatus.hasCredential) {
+        setDevice2faEnabledOnly(false);
+        await refreshDeviceAuthStatus();
+      }
+
+      const nextSession: AuthSession = {
+        jwt: resp.jwt,
+        clienteId: resp.clienteId,
+        rol: resp.rol === ROLES.ADMIN ? 1 : 2,
+        correo: cleanEmail,
+        expiraEnSegundos: resp.expiraEnSegundos || 900,
+        loginAt: Date.now(),
+      };
+      setStoredToken(nextSession.jwt);
+      localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(nextSession));
+      setSession(nextSession);
+      return nextSession;
+    },
+    [refreshDeviceAuthStatus],
+  );
+
+  const setDevice2faEnabled = useCallback(
+    async (enabled: boolean) => {
+      if (enabled) {
+        const email = session?.correo;
+        if (!email) {
+          throw new Error('Inicia sesión primero para vincular este equipo.');
+        }
+        await verifyWithDevicePrompt(email, { enable2faPreference: true });
+      } else {
+        setDevice2faEnabledOnly(false);
+      }
+      await refreshDeviceAuthStatus();
+    },
+    [refreshDeviceAuthStatus, session?.correo],
+  );
+
+  const unlinkDevice2fa = useCallback(async () => {
+    clearDevice2fa();
+    await refreshDeviceAuthStatus();
+  }, [refreshDeviceAuthStatus]);
 
   const logout = useCallback(async () => {
     try {
@@ -128,6 +213,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin: session?.rol === ROLES.ADMIN,
         theme,
         apiBaseUrl,
+        deviceAuthStatus,
+        refreshDeviceAuthStatus,
+        setDevice2faEnabled,
+        unlinkDevice2fa,
         toggleTheme,
         updateApiBaseUrl,
         login,

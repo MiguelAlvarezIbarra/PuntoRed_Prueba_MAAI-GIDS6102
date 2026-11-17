@@ -88,7 +88,7 @@ async function requestJson<T>(
     timeoutMs?: number;
   } = {},
 ): Promise<T> {
-  const { method = 'GET', body, auth = true, timeoutMs = 45000 } = options;
+  const { method = 'GET', body, auth = true, timeoutMs = 90000 } = options;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
 

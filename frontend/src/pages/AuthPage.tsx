@@ -8,21 +8,37 @@ import type { ClienteRequest } from '../types/api';
 import { formatAccountNumber } from '../utils/formatters';
 
 export const AuthPage: React.FC = () => {
-  const { login, theme, toggleTheme, apiBaseUrl } = useAuth();
-  const [correo, setCorreo] = useState('');
+  const { login, theme, toggleTheme, apiBaseUrl, deviceAuthStatus } = useAuth();
+  const [correo, setCorreo] = useState(deviceAuthStatus.linkedEmail || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [useDevice2fa, setUseDevice2fa] = useState(deviceAuthStatus.enabled);
   const [loading, setLoading] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showEnvModal, setShowEnvModal] = useState(false);
   const [alert, setAlert] = useState<AlertBannerState | null>(null);
+
+  const didPrefillDeviceEmail = React.useRef(false);
+
+  React.useEffect(() => {
+    if (deviceAuthStatus.enabled) {
+      setUseDevice2fa(true);
+    }
+    if (deviceAuthStatus.linkedEmail && !didPrefillDeviceEmail.current) {
+      didPrefillDeviceEmail.current = true;
+      setCorreo((prev) => prev || deviceAuthStatus.linkedEmail || '');
+    }
+  }, [deviceAuthStatus.enabled, deviceAuthStatus.linkedEmail]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAlert(null);
     setLoading(true);
     try {
-      await login({ correo: correo.trim(), password });
+      await login(
+        { correo: correo.trim(), password },
+        { requireDevice2fa: deviceAuthStatus.platformAvailable ? useDevice2fa : false },
+      );
     } catch (err) {
       const apiErr = err instanceof ApiClientError ? err : null;
       setAlert({
@@ -158,7 +174,7 @@ export const AuthPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mb-4">
+              <div className="mb-3">
                 <label className="form-label fw-semibold small">Contraseña</label>
                 <div className="input-group">
                   <span className="input-group-text">
@@ -182,6 +198,33 @@ export const AuthPage: React.FC = () => {
                 </div>
               </div>
 
+              {deviceAuthStatus.platformAvailable ? (
+                <div className="form-check form-switch mb-4 p-3 ps-5 rounded-3 border bg-body-tertiary">
+                  <input
+                    id="chkLoginDevice2fa"
+                    type="checkbox"
+                    className="form-check-input"
+                    checked={useDevice2fa}
+                    disabled={loading}
+                    onChange={(e) => setUseDevice2fa(e.target.checked)}
+                  />
+                  <label className="form-check-label small fw-semibold" htmlFor="chkLoginDevice2fa">
+                    <i className="bi bi-shield-lock text-primary me-1" />
+                    2FA con Windows Hello / Contraseña del equipo
+                  </label>
+                  <div className="form-text mt-1">
+                    Al entrar pedirá la contraseña, PIN o huella configurada en esta computadora (WebAuthn).
+                  </div>
+                </div>
+              ) : (
+                <div className="alert alert-light border small py-2 mb-4 text-body-secondary">
+                  <i className="bi bi-laptop me-1" />
+                  {deviceAuthStatus.secureContext
+                    ? 'Configura PIN o huella en Windows Hello para habilitar 2FA de equipo en este navegador.'
+                    : 'Abre la web por HTTPS o localhost para habilitar la verificación con contraseña/PIN del equipo.'}
+                </div>
+              )}
+
               <div className="d-grid gap-2">
                 <button
                   type="submit"
@@ -191,7 +234,9 @@ export const AuthPage: React.FC = () => {
                   {loading ? (
                     <>
                       <span className="spinner-border spinner-border-sm me-2" />
-                      Autenticando...
+                      {deviceAuthStatus.platformAvailable && useDevice2fa
+                        ? 'Validando acceso y equipo...'
+                        : 'Autenticando...'}
                     </>
                   ) : (
                     <>

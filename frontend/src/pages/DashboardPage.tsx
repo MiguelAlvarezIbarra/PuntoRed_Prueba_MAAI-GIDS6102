@@ -15,12 +15,22 @@ interface DashboardPageProps {
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
-  const { session, isAdmin, apiBaseUrl, clearLocalSession } = useAuth();
+  const {
+    session,
+    isAdmin,
+    apiBaseUrl,
+    clearLocalSession,
+    deviceAuthStatus,
+    refreshDeviceAuthStatus,
+    setDevice2faEnabled,
+    unlinkDevice2fa,
+  } = useAuth();
   const [clientes, setClientes] = useState<ClienteData[]>([]);
   const [cuentas, setCuentas] = useState<CuentaData[]>([]);
   const [servicios, setServicios] = useState<CatalogoServicioItem[]>([]);
   const [totalPagos, setTotalPagos] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+  const [updatingDevice2fa, setUpdatingDevice2fa] = useState(false);
   const [alert, setAlert] = useState<AlertBannerState | null>(null);
 
   const cargarResumen = async () => {
@@ -227,6 +237,107 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 Revisa tus operaciones exitosas, rechazadas o pendientes y verifica folios.
               </div>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Seguridad Biométrica / Contraseña del Equipo (WebAuthn) */}
+      <div className="pr-card p-4">
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div className="d-flex align-items-start gap-3">
+            <span
+              className={`pr-kpi-icon ${
+                deviceAuthStatus.enabled
+                  ? 'bg-success bg-opacity-10 text-success'
+                  : 'bg-secondary bg-opacity-10 text-secondary'
+              }`}
+            >
+              <i className="bi bi-fingerprint" />
+            </span>
+            <div>
+              <h6 className="fw-bold mb-1">
+                Seguridad del Equipo (2FA · Windows Hello / Contraseña PC)
+              </h6>
+              <p className="small text-body-secondary mb-0">
+                {deviceAuthStatus.platformAvailable
+                  ? deviceAuthStatus.enabled
+                    ? `Activo en este navegador para ${deviceAuthStatus.linkedEmail || session?.correo}.`
+                    : 'Disponible en este equipo: activa la verificación nativa con PIN, contraseña de Windows o huella.'
+                  : deviceAuthStatus.secureContext
+                    ? 'Tu equipo o navegador no reporta PIN/Windows Hello/Touch ID configurado.'
+                    : 'Requiere HTTPS o localhost para activar Windows Hello / WebAuthn.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            {deviceAuthStatus.platformAvailable ? (
+              <>
+                <div className="form-check form-switch m-0">
+                  <input
+                    id="chkDashboardDevice2fa"
+                    type="checkbox"
+                    className="form-check-input"
+                    checked={deviceAuthStatus.enabled}
+                    disabled={updatingDevice2fa}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setUpdatingDevice2fa(true);
+                      setAlert(null);
+                      void setDevice2faEnabled(next)
+                        .then(() => {
+                          setAlert({
+                            type: 'success',
+                            title: next ? '2FA del equipo activado' : '2FA del equipo desactivado',
+                            message: next
+                              ? 'Tu computadora quedó vinculada con Windows Hello / contraseña del equipo.'
+                              : 'Se desactivó la exigencia de verificación del equipo al entrar.',
+                          });
+                        })
+                        .catch((err) => {
+                          setAlert({
+                            type: 'warning',
+                            title: 'No se pudo cambiar la seguridad del equipo',
+                            message: err instanceof Error ? err.message : 'Verificación cancelada.',
+                          });
+                        })
+                        .finally(() => setUpdatingDevice2fa(false));
+                    }}
+                  />
+                  <label className="form-check-label small fw-semibold" htmlFor="chkDashboardDevice2fa">
+                    Exigir verificación del equipo
+                  </label>
+                </div>
+                {deviceAuthStatus.hasCredential && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger"
+                    disabled={updatingDevice2fa}
+                    onClick={() => {
+                      void unlinkDevice2fa().then(() => {
+                        setAlert({
+                          type: 'info',
+                          title: 'Equipo desvinculado',
+                          message: 'Se eliminó la credencial WebAuthn de este navegador.',
+                        });
+                      });
+                    }}
+                  >
+                    <i className="bi bi-link-45deg me-1" />
+                    Desvincular
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => void refreshDeviceAuthStatus()}
+              >
+                <i className="bi bi-arrow-clockwise me-1" />
+                Reverificar equipo
+              </button>
+            )}
           </div>
         </div>
       </div>

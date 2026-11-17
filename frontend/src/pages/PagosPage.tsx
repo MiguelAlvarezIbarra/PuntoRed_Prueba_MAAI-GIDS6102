@@ -1,7 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertBanner, type AlertBannerState } from '../components/AlertBanner';
 import { ServiceLogo } from '../components/ServiceLogo';
+import { useAuth } from '../context/AuthContext';
 import { api, ApiClientError } from '../services/apiClient';
+import { verifyWithDevicePrompt } from '../services/deviceAuthService';
 import type {
   AppSection,
   CatalogoServicioItem,
@@ -23,8 +25,10 @@ export const PagosPage: React.FC<PagosPageProps> = ({
   prefillServicio,
   onNavigate,
 }) => {
+  const { session, deviceAuthStatus } = useAuth();
   const [cuentas, setCuentas] = useState<CuentaData[]>([]);
   const [servicios, setServicios] = useState<CatalogoServicioItem[]>([]);
+  const [servicioBusqueda, setServicioBusqueda] = useState('');
 
   const [numeroCuenta, setNumeroCuenta] = useState(prefillCuenta || '');
   const [servicio, setServicio] = useState<CatalogoServicioItem | null>(prefillServicio || null);
@@ -39,12 +43,14 @@ export const PagosPage: React.FC<PagosPageProps> = ({
   const [validacion, setValidacion] = useState<ValidacionReferenciaResponse | null>(null);
   const [validatingRef, setValidatingRef] = useState(false);
 
-  // Paso 3: Monto, confirmacion explicita y 2FA
+  // Paso 3: Monto, confirmacion explicita, modo Real/Simulacion y 2FA (Equipo o Correo)
   const [monto, setMonto] = useState(
     prefillServicio?.precioSugerido ? String(prefillServicio.precioSugerido) : '',
   );
   const [codigoRegistroSeleccionado, setCodigoRegistroSeleccionado] = useState('');
   const [confirmacionExplicita, setConfirmacionExplicita] = useState(false);
+  const [simularPago, setSimularPago] = useState(false);
+  const [useDevice2fa, setUseDevice2fa] = useState(deviceAuthStatus.platformAvailable);
   const [pinSolicitado, setPinSolicitado] = useState<Pin2faResponse | null>(null);
   const [pin2fa, setPin2fa] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -54,6 +60,29 @@ export const PagosPage: React.FC<PagosPageProps> = ({
   const [verifyingStatus, setVerifyingStatus] = useState(false);
   const [resultadoPago, setResultadoPago] = useState<PagoPuntoredResponse | null>(null);
   const [alert, setAlert] = useState<AlertBannerState | null>(null);
+
+  useEffect(() => {
+    setUseDevice2fa(deviceAuthStatus.platformAvailable);
+  }, [deviceAuthStatus.platformAvailable]);
+
+  const serviciosFiltradosSelect = useMemo(() => {
+    const q = servicioBusqueda.trim().toLowerCase();
+    const filtrados = !q
+      ? servicios
+      : servicios.filter(
+          (s) =>
+            s.nombreServicio.toLowerCase().includes(q) ||
+            s.nombreProducto.toLowerCase().includes(q) ||
+            (s.categoria || '').toLowerCase().includes(q) ||
+            s.tipoOperacion.toLowerCase().includes(q) ||
+            (s.codigoProducto || '').toLowerCase().includes(q),
+        );
+    const top = filtrados.slice(0, 200);
+    if (servicio && !top.some((s) => s.claveUnica === servicio.claveUnica)) {
+      return [servicio, ...top];
+    }
+    return top;
+  }, [servicios, servicioBusqueda, servicio]);
 
   const cargarDatosIniciales = useCallback(async () => {
     try {
@@ -204,12 +233,15 @@ export const PagosPage: React.FC<PagosPageProps> = ({
       if (res.pin2fa) {
         setPin2fa(res.pin2fa);
       }
+      const sentReal = res.correoEnviado === true;
       setAlert({
-        type: 'success',
-        title: 'PIN 2FA enviado',
+        type: res.pin2fa && !sentReal ? 'warning' : 'success',
+        title: sentReal ? 'PIN 2FA enviado a tu correo' : 'PIN temporal 2FA generado',
         message: res.pin2fa
-          ? `Enviado a ${res.correoDestino}. En modo pruebas se autocompletó el PIN (${res.pin2fa}).`
-          : `Revisa tu correo ${res.correoDestino}. Expira en ${Math.round(res.expiraEnSegundos / 60)} minutos.`,
+          ? sentReal
+            ? `Enviado a ${res.correoDestino}. En modo pruebas se autocompletó el PIN (${res.pin2fa}).`
+            : `El servidor no tiene correo configurado (no salió email a ${res.correoDestino}). Se autocompletó este PIN temporal: ${res.pin2fa}.`
+          : `Revisa tu correo ${res.correoDestino} (o spam). Expira en ${Math.round(res.expiraEnSegundos / 60)} minutos.`,
       });
     } catch (err) {
       setAlert({
@@ -247,8 +279,16 @@ export const PagosPage: React.FC<PagosPageProps> = ({
       });
       return;
     }
-    if (!/^\d{6}$/.test(pin2fa.trim())) {
+    if (!useDevice2fa && !/^\d{6}$/.test(pin2fa.trim())) {
       setAlert({ type: 'warning', title: 'PIN 2FA requerido', message: 'Ingresa el PIN de 6 dígitos enviado a tu correo.' });
+      return;
+    }
+    if (useDevice2fa && !deviceAuthStatus.platformAvailable) {
+      setAlert({
+        type: 'warning',
+        title: 'Verificación de equipo no disponible',
+        message: 'Configura Windows Hello / PIN en tu computadora o cambia el método 2FA a Correo.',
+      });
       return;
     }
     setShowConfirmModal(true);
@@ -262,6 +302,10 @@ export const PagosPage: React.FC<PagosPageProps> = ({
     setPaying(true);
     setAlert(null);
     try {
+      if (useDevice2fa) {
+        await verifyWithDevicePrompt(session?.correo || '');
+      }
+
       const montoNum = Number.parseFloat(monto);
       const aval = validacion.camposAdicionalesAval || {};
       const res = await api.realizarPagoPuntored({
@@ -291,7 +335,10 @@ export const PagosPage: React.FC<PagosPageProps> = ({
         accountDataAcredited: aval.accountDataAcredited || undefined,
         additionalCompanyCode: aval.additionalCompanyCode || undefined,
         confirmacionExplicita: true,
-        pin2fa: pin2fa.trim(),
+        metodo2fa: useDevice2fa ? 'BIOMETRIA_MOVIL' : 'PIN_CORREO',
+        biometriaVerificada: useDevice2fa ? true : undefined,
+        simularPago: simularPago ? true : undefined,
+        pin2fa: useDevice2fa ? undefined : pin2fa.trim(),
       });
 
       setResultadoPago(res);
@@ -427,16 +474,39 @@ export const PagosPage: React.FC<PagosPageProps> = ({
             </div>
 
             <div className="mb-3">
-              <label className="form-label fw-semibold">Producto / Convenio seleccionado</label>
+              <label className="form-label fw-semibold">
+                Producto / Convenio seleccionado ({servicios.length} disponibles)
+              </label>
+              <div className="input-group input-group-sm mb-2">
+                <span className="input-group-text">
+                  <i className="bi bi-search" />
+                </span>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Filtrar por nombre, código, categoría o tipo (CFE, Telcel, Virgin)..."
+                  value={servicioBusqueda}
+                  onChange={(e) => setServicioBusqueda(e.target.value)}
+                />
+                {servicioBusqueda && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => setServicioBusqueda('')}
+                  >
+                    <i className="bi bi-x" />
+                  </button>
+                )}
+              </div>
               <select
                 className="form-select"
                 value={claveServicioSeleccionado}
                 onChange={(e) => handleSeleccionarServicioDropdown(e.target.value)}
               >
                 <option value="">Selecciona un servicio del catálogo...</option>
-                {servicios.slice(0, 200).map((s) => (
+                {serviciosFiltradosSelect.map((s) => (
                   <option key={s.claveUnica} value={s.claveUnica}>
-                    [{s.tipoOperacion}] {s.nombreProducto}
+                    [{s.tipoOperacion}] {s.nombreServicio} • {s.nombreProducto}
                     {s.precioSugerido ? ` (${formatCurrency(s.precioSugerido)})` : ''}
                   </option>
                 ))}
@@ -627,6 +697,62 @@ export const PagosPage: React.FC<PagosPageProps> = ({
 
               <div className="row g-3 mb-3">
                 <div className="col-md-6">
+                  <label className="form-label fw-semibold">Modo de operación</label>
+                  <div className="btn-group w-100" role="group">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${!simularPago ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setSimularPago(false)}
+                    >
+                      <i className="bi bi-cloud-check me-1" />
+                      Real (PuntoRed)
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${simularPago ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setSimularPago(true)}
+                    >
+                      <i className="bi bi-flask me-1" />
+                      Simulación
+                    </button>
+                  </div>
+                  <div className="form-text">
+                    {simularPago
+                      ? 'Valida referencia, saldo y 2FA, y genera un comprobante simulado sin cobro real.'
+                      : 'Ejecuta la operación directamente contra la API real de PuntoRed.'}
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <label className="form-label fw-semibold">Método de verificación 2FA</label>
+                  <div className="btn-group w-100" role="group">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${useDevice2fa ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setUseDevice2fa(true)}
+                    >
+                      <i className="bi bi-laptop me-1" />
+                      Equipo / PC
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${!useDevice2fa ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setUseDevice2fa(false)}
+                    >
+                      <i className="bi bi-envelope-check me-1" />
+                      Correo (PIN)
+                    </button>
+                  </div>
+                  <div className="form-text">
+                    {useDevice2fa
+                      ? 'Solicitará tu contraseña, PIN o huella de Windows Hello al confirmar.'
+                      : 'Enviará y validará un código PIN de 6 dígitos en tu correo.'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="row g-3 mb-3">
+                <div className="col-md-6">
                   <label className="form-label fw-semibold">Importe a pagar (COP / MXN)</label>
                   <div className="input-group">
                     <span className="input-group-text">$</span>
@@ -649,29 +775,60 @@ export const PagosPage: React.FC<PagosPageProps> = ({
                 </div>
 
                 <div className="col-md-6">
-                  <label className="form-label fw-semibold">PIN 2FA de verificación</label>
-                  <div className="input-group">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      className="form-control font-monospace text-center fw-bold"
-                      placeholder="6 dígitos"
-                      value={pin2fa}
-                      onChange={(e) => setPin2fa(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-outline-primary"
-                      disabled={sendingPin}
-                      onClick={() => void handleSolicitarPin2fa()}
+                  {useDevice2fa ? (
+                    <div
+                      className={`p-3 rounded-3 border h-100 d-flex align-items-center gap-2 small ${
+                        deviceAuthStatus.platformAvailable
+                          ? 'border-primary bg-primary bg-opacity-10'
+                          : 'border-warning bg-warning bg-opacity-10'
+                      }`}
                     >
-                      {sendingPin ? 'Enviando...' : 'Solicitar PIN'}
-                    </button>
-                  </div>
-                  {pinSolicitado && (
-                    <div className="form-text text-primary">
-                      Enviado a {pinSolicitado.correoDestino}
+                      <i
+                        className={`bi ${
+                          deviceAuthStatus.platformAvailable
+                            ? 'bi-shield-check text-primary fs-5'
+                            : 'bi-exclamation-triangle text-warning fs-5'
+                        }`}
+                      />
+                      <span>
+                        {deviceAuthStatus.platformAvailable
+                          ? 'Al confirmar el pago se abrirá Windows Hello para pedir la contraseña, PIN o huella del equipo.'
+                          : 'Tu computadora o navegador actual no reporta Windows Hello activo; cambia a Correo (PIN) o usa HTTPS/localhost.'}
+                      </span>
                     </div>
+                  ) : (
+                    <>
+                      <label className="form-label fw-semibold">PIN 2FA de verificación</label>
+                      <div className="input-group">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          className="form-control font-monospace text-center fw-bold"
+                          placeholder="6 dígitos"
+                          value={pin2fa}
+                          onChange={(e) => setPin2fa(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-outline-primary"
+                          disabled={sendingPin}
+                          onClick={() => void handleSolicitarPin2fa()}
+                        >
+                          {sendingPin ? 'Enviando...' : 'Solicitar PIN'}
+                        </button>
+                      </div>
+                      {pinSolicitado && (
+                        <div
+                          className={`form-text ${
+                            pinSolicitado.correoEnviado === false ? 'text-warning' : 'text-primary'
+                          }`}
+                        >
+                          {pinSolicitado.correoEnviado === false
+                            ? `Sin servicio de correo en servidor; PIN temporal: ${pinSolicitado.pin2fa || ''}`
+                            : `Enviado a ${pinSolicitado.correoDestino}`}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -693,7 +850,12 @@ export const PagosPage: React.FC<PagosPageProps> = ({
               <button
                 type="submit"
                 className="btn btn-success btn-lg w-100 fw-semibold"
-                disabled={paying || !confirmacionExplicita || !pin2fa}
+                disabled={
+                  paying ||
+                  !confirmacionExplicita ||
+                  (!useDevice2fa && !pin2fa) ||
+                  (useDevice2fa && !deviceAuthStatus.platformAvailable)
+                }
               >
                 {paying ? (
                   <>
@@ -717,10 +879,19 @@ export const PagosPage: React.FC<PagosPageProps> = ({
             <div className="pr-card p-4 border-2">
               <div className="text-center pb-3 border-bottom mb-3">
                 {resultadoPago.estado === 'EXITOSA' ? (
-                  <span className="badge text-bg-success fs-6 px-3 py-2 mb-2">
-                    <i className="bi bi-check-circle-fill me-2" />
-                    TRANSACCIÓN EXITOSA
-                  </span>
+                  <div className="d-flex justify-content-center gap-2 flex-wrap mb-2">
+                    <span className="badge text-bg-success fs-6 px-3 py-2">
+                      <i className="bi bi-check-circle-fill me-2" />
+                      TRANSACCIÓN EXITOSA
+                    </span>
+                    {(resultadoPago.simulada ||
+                      resultadoPago.proveedor?.toUpperCase() === 'PUNTORED_SIMULADO') && (
+                      <span className="badge text-bg-info fs-6 px-3 py-2">
+                        <i className="bi bi-flask me-1" />
+                        Simulación
+                      </span>
+                    )}
+                  </div>
                 ) : resultadoPago.estado === 'RECHAZADA' ? (
                   <span className="badge text-bg-danger fs-6 px-3 py-2 mb-2">
                     <i className="bi bi-x-circle-fill me-2" />
@@ -899,6 +1070,13 @@ export const PagosPage: React.FC<PagosPageProps> = ({
                   <div className="d-flex justify-content-between fs-5 border-top pt-2 mt-1">
                     <span className="fw-semibold">Total a descontar:</span>
                     <strong className="text-primary">{formatCurrency(monto)}</strong>
+                  </div>
+                  <div className="d-flex justify-content-between mt-1">
+                    <span className="text-body-secondary">Modalidad / 2FA:</span>
+                    <strong>
+                      {simularPago ? 'Simulación' : 'Real (PuntoRed)'} ·{' '}
+                      {useDevice2fa ? 'Equipo (Windows Hello)' : 'PIN Correo'}
+                    </strong>
                   </div>
                 </div>
               </div>
