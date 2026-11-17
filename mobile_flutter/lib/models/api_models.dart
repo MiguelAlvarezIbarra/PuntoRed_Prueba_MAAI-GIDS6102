@@ -41,24 +41,42 @@ class AuthSession {
 class ClienteData {
   final int id;
   final String nombre;
+  final String? segundoNombre;
   final String apellidoPaterno;
   final String apellidoMaterno;
   final String rfc;
   final String curp;
   final String correo;
   final String telefono;
+  final String? telefonoAlternativo;
+  final String sexo;
+  final String nacionalidad;
+  final String estadoCivil;
+  final String ocupacion;
+  final String empresa;
+  final double ingresoMensual;
+  final Map<String, dynamic>? domicilio;
   final String? numeroCuenta;
   final bool activo;
 
   const ClienteData({
     required this.id,
     required this.nombre,
+    this.segundoNombre,
     required this.apellidoPaterno,
     required this.apellidoMaterno,
     required this.rfc,
     required this.curp,
     required this.correo,
     required this.telefono,
+    this.telefonoAlternativo,
+    this.sexo = 'H',
+    this.nacionalidad = 'Mexicano',
+    this.estadoCivil = 'Soltero',
+    this.ocupacion = 'Especialista',
+    this.empresa = 'PuntoRed',
+    this.ingresoMensual = 10000,
+    this.domicilio,
     this.numeroCuenta,
     required this.activo,
   });
@@ -69,12 +87,23 @@ class ClienteData {
     return ClienteData(
       id: _asInt(json['id']),
       nombre: json['nombre']?.toString() ?? '',
+      segundoNombre: json['segundoNombre']?.toString(),
       apellidoPaterno: json['apellidoPaterno']?.toString() ?? '',
       apellidoMaterno: json['apellidoMaterno']?.toString() ?? '',
       rfc: json['rfc']?.toString() ?? '',
       curp: json['curp']?.toString() ?? '',
       correo: json['correo']?.toString() ?? '',
-      telefono: json['telefono']?.toString() ?? '',
+      telefono: (json['telefonoMovil'] ?? json['telefono'])?.toString() ?? '',
+      telefonoAlternativo: json['telefonoAlternativo']?.toString(),
+      sexo: json['sexo']?.toString() ?? 'H',
+      nacionalidad: json['nacionalidad']?.toString() ?? 'Mexicano',
+      estadoCivil: json['estadoCivil']?.toString() ?? 'Soltero',
+      ocupacion: json['ocupacion']?.toString() ?? 'Especialista',
+      empresa: json['empresa']?.toString() ?? 'PuntoRed',
+      ingresoMensual: _asDouble(json['ingresoMensual']) ?? 10000,
+      domicilio: json['domicilio'] is Map<String, dynamic>
+          ? json['domicilio'] as Map<String, dynamic>
+          : null,
       numeroCuenta: json['numeroCuenta']?.toString(),
       activo: json['activo'] != false,
     );

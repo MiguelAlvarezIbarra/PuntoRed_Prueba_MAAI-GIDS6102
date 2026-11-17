@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/formatters.dart';
 import '../models/api_models.dart';
 import '../state/app_state.dart';
@@ -156,6 +157,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     const SizedBox(height: 12),
                     TicketCard(ticket: current.ticket!),
                   ],
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final texto = [
+                        'COMPROBANTE PUNTORED (${current.estado})',
+                        'Servicio: ${current.nombreServicio}',
+                        'Fecha: ${AppFormatters.formatDateTime(current.fechaRegistro)}',
+                        'Referencia: ${current.referencia1}',
+                        'Importe: ${AppFormatters.formatCurrency(current.monto)}',
+                        'Proveedor: ${current.proveedor}',
+                        if (current.codigoAutorizacion != null) 'Autorización: ${current.codigoAutorizacion}',
+                        if (current.idTransaccionProveedor != null) 'Folio: ${current.idTransaccionProveedor}',
+                        if (current.trace != null) 'Trace: ${current.trace}',
+                      ].join('\n');
+                      await Clipboard.setData(ClipboardData(text: texto));
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text('Comprobante copiado al portapapeles.')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy_all_rounded, size: 18),
+                    label: const Text('Copiar Comprobante'),
+                  ),
                 ],
               ),
             ),
