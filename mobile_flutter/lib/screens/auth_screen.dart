@@ -735,6 +735,7 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.only(bottom: 12),
             child: DropdownButtonFormField<String>(
               initialValue: _sexo,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Sexo *',
                 border: OutlineInputBorder(),
@@ -750,12 +751,16 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.only(bottom: 12),
             child: DropdownButtonFormField<String>(
               initialValue: _nacionalidad,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Nacionalidad *',
                 border: OutlineInputBorder(),
               ),
               items: AppConstants.nacionalidades
-                  .map((n) => DropdownMenuItem(value: n, child: Text(n)))
+                  .map((n) => DropdownMenuItem(
+                        value: n,
+                        child: Text(n, overflow: TextOverflow.ellipsis),
+                      ))
                   .toList(),
               onChanged: (val) =>
                   setState(() => _nacionalidad = val ?? AppConstants.nacionalidades.first),
@@ -765,12 +770,16 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.only(bottom: 12),
             child: DropdownButtonFormField<String>(
               initialValue: _estadoCivil,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Estado civil *',
                 border: OutlineInputBorder(),
               ),
               items: AppConstants.estadosCiviles
-                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  .map((e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e, overflow: TextOverflow.ellipsis),
+                      ))
                   .toList(),
               onChanged: (val) =>
                   setState(() => _estadoCivil = val ?? AppConstants.estadosCiviles.first),
@@ -851,12 +860,16 @@ class _AuthScreenState extends State<AuthScreen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: DropdownButtonFormField<String>(
               initialValue: _pais,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'País *',
                 border: OutlineInputBorder(),
               ),
               items: AppConstants.paises
-                  .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+                  .map((p) => DropdownMenuItem(
+                        value: p,
+                        child: Text(p, overflow: TextOverflow.ellipsis),
+                      ))
                   .toList(),
               onChanged: (val) => setState(() => _pais = val ?? AppConstants.paises.first),
             ),

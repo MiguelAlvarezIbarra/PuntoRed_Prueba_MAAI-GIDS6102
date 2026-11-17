@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/formatters.dart';
 import '../models/api_models.dart';
 import '../services/api_service.dart';
@@ -1239,10 +1240,39 @@ class _PaymentScreenState extends State<PaymentScreen> {
               TicketCard(ticket: r.ticket!),
             ],
             const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: widget.onOpenHistory,
-              icon: const Icon(Icons.history_rounded),
-              label: const Text('Ver en Historial de Pagos'),
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final texto = [
+                      'COMPROBANTE PUNTORED (${r.estado})',
+                      'Servicio: ${r.nombreServicio}',
+                      'Referencia: ${r.referencia1}',
+                      'Importe: ${AppFormatters.formatCurrency(r.monto)}',
+                      if (r.codigoAutorizacion != null) 'Autorización: ${r.codigoAutorizacion}',
+                      if (r.idTransaccionProveedor != null) 'Folio: ${r.idTransaccionProveedor}',
+                      if (r.trace != null) 'Trace: ${r.trace}',
+                      'Saldo actual: ${AppFormatters.formatCurrency(r.saldoNuevo)}',
+                    ].join('\n');
+                    await Clipboard.setData(ClipboardData(text: texto));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Comprobante copiado al portapapeles.')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.copy_all_rounded, size: 18),
+                  label: const Text('Copiar Comprobante'),
+                ),
+                TextButton.icon(
+                  onPressed: widget.onOpenHistory,
+                  icon: const Icon(Icons.history_rounded),
+                  label: const Text('Ver en Historial de Pagos'),
+                ),
+              ],
             ),
           ],
         ),

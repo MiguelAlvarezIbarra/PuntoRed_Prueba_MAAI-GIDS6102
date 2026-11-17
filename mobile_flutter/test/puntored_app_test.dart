@@ -569,7 +569,7 @@ void main() {
       );
       addTearDown(state.dispose);
       await state.init();
-      await state.login('mijelito333@gmail.com', 'AdminPuntoRed2026!');
+      await state.login('mijelito333@gmail.com', 'ClavePruebaDemo1!');
 
       await tester.pumpWidget(
         MaterialApp(
