@@ -135,6 +135,12 @@ export const PagosPage: React.FC<PagosPageProps> = ({
 
   const cuentaSeleccionada = cuentas.find((c) => c.numeroCuenta === numeroCuenta);
 
+  const esProductoPrecioFijo = Boolean(
+    servicio?.precioSugerido &&
+      servicio.precioSugerido > 0 &&
+      (servicio.tipoOperacion === 'PAQUETE' || servicio.tipoOperacion === 'PIN'),
+  );
+
   const resetValidacion = () => {
     setValidacion(null);
     setConfirmacionExplicita(false);
@@ -175,7 +181,7 @@ export const PagosPage: React.FC<PagosPageProps> = ({
         codigoProveedor: servicio.proveedorCodigo,
         referencia1: refTrim,
         referencia2: referencia2.trim() || undefined,
-        montoReferencia: servicio.precioSugerido || (monto ? Number.parseFloat(monto) : 0),
+        montoReferencia: esProductoPrecioFijo ? servicio.precioSugerido : undefined,
         codigoIac: codigoIac.trim() || undefined,
       });
       setValidacion(res);
@@ -753,7 +759,15 @@ export const PagosPage: React.FC<PagosPageProps> = ({
 
               <div className="row g-3 mb-3">
                 <div className="col-md-6">
-                  <label className="form-label fw-semibold">Importe a pagar (COP / MXN)</label>
+                  <label className="form-label fw-semibold d-flex align-items-center justify-content-between">
+                    <span>Importe a pagar (COP / MXN)</span>
+                    {(esProductoPrecioFijo || validacion?.montoEditable === false) && (
+                      <span className="badge text-bg-secondary">
+                        <i className="bi bi-lock-fill me-1" />
+                        Precio fijo
+                      </span>
+                    )}
+                  </label>
                   <div className="input-group">
                     <span className="input-group-text">$</span>
                     <input
@@ -761,16 +775,22 @@ export const PagosPage: React.FC<PagosPageProps> = ({
                       step="1"
                       min="1"
                       className="form-control fw-bold"
-                      readOnly={validacion?.montoEditable === false}
+                      readOnly={esProductoPrecioFijo || validacion?.montoEditable === false}
                       value={monto}
                       onChange={(e) => setMonto(e.target.value)}
                     />
                   </div>
-                  {(validacion?.montoMinimo || validacion?.montoMaximo) && (
-                    <div className="form-text">
-                      Rango: {validacion.montoMinimo ? formatCurrency(validacion.montoMinimo) : '$1'} –{' '}
-                      {validacion.montoMaximo ? formatCurrency(validacion.montoMaximo) : 'Sin límite'}
+                  {esProductoPrecioFijo || validacion?.montoEditable === false ? (
+                    <div className="form-text text-primary fw-medium">
+                      Precio fijo preestablecido por el proveedor (no editable).
                     </div>
+                  ) : (
+                    (validacion?.montoMinimo || validacion?.montoMaximo) && (
+                      <div className="form-text">
+                        Rango: {validacion.montoMinimo ? formatCurrency(validacion.montoMinimo) : '$1'} –{' '}
+                        {validacion.montoMaximo ? formatCurrency(validacion.montoMaximo) : 'Sin límite'}
+                      </div>
+                    )
                   )}
                 </div>
 

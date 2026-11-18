@@ -13,6 +13,9 @@ import com.proyecto.servicios.entity.sf.TransaccionPago;
 import com.proyecto.servicios.entity.sf.Usuario;
 import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
+import com.proyecto.servicios.model.puntored.CatalogoBusquedaRequest;
+import com.proyecto.servicios.model.puntored.CatalogoServicioItem;
+import com.proyecto.servicios.model.puntored.CatalogoServiciosResponse;
 import com.proyecto.servicios.model.puntored.DetallePagoRequest;
 import com.proyecto.servicios.model.puntored.DetallePagoResponse;
 import com.proyecto.servicios.model.puntored.HistorialPagoItem;
@@ -27,12 +30,14 @@ import com.proyecto.servicios.model.puntored.ValidarReferenciaRequest;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.TransaccionPagoRepository;
 import com.proyecto.servicios.repositorys.sf.UsuarioRepository;
+import com.proyecto.servicios.service.PuntoredCatalogoService;
 import com.proyecto.servicios.service.PuntoredPagoService;
 import com.proyecto.servicios.service.PuntoredTokenService;
 import com.proyecto.servicios.util.CryptoUtil;
 import com.proyecto.servicios.util.HashUtil;
 import com.proyecto.servicios.util.Roles;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -97,6 +102,7 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
     private final CryptoUtil cryptoUtil;
     private final HashUtil hashUtil;
     private final ObjectMapper objectMapper;
+    private final PuntoredCatalogoService catalogoService;
     private final SecureRandom random = new SecureRandom();
     private final AtomicInteger secuenciaTrace = new AtomicInteger(10);
 
@@ -110,6 +116,32 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
             CryptoUtil cryptoUtil,
             HashUtil hashUtil,
             ObjectMapper objectMapper) {
+        this(
+                tokenService,
+                apiClient,
+                properties,
+                cuentaRepository,
+                usuarioRepository,
+                transaccionPagoRepository,
+                cryptoUtil,
+                hashUtil,
+                objectMapper,
+                null
+        );
+    }
+
+    @Autowired
+    public PuntoredPagoServiceImpl(
+            PuntoredTokenService tokenService,
+            PuntoredApiClient apiClient,
+            PuntoredProperties properties,
+            CuentaRepository cuentaRepository,
+            UsuarioRepository usuarioRepository,
+            TransaccionPagoRepository transaccionPagoRepository,
+            CryptoUtil cryptoUtil,
+            HashUtil hashUtil,
+            ObjectMapper objectMapper,
+            PuntoredCatalogoService catalogoService) {
         this.tokenService = tokenService;
         this.apiClient = apiClient;
         this.properties = properties;
@@ -119,6 +151,7 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         this.cryptoUtil = cryptoUtil;
         this.hashUtil = hashUtil;
         this.objectMapper = objectMapper;
+        this.catalogoService = catalogoService;
     }
 
     @Override
@@ -249,10 +282,16 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
             );
         }
 
-        BigDecimal sugerido = request.getMontoReferencia();
-        boolean editable = OP_RECARGA.equals(tipoOp) && (sugerido == null || sugerido.compareTo(BigDecimal.ZERO) <= 0);
-        BigDecimal min = editable ? new BigDecimal("1000.00") : sugerido;
-        BigDecimal max = editable ? new BigDecimal("500000.00") : sugerido;
+        final boolean esRecarga = OP_RECARGA.equals(tipoOp);
+        BigDecimal sugerido = esRecarga
+                ? (request.getMontoReferencia() != null && request.getMontoReferencia().compareTo(BigDecimal.ZERO) > 0
+                        ? request.getMontoReferencia()
+                        : null)
+                : resolverPrecioFijoLineaOPin(
+                        tipoOp, request.getCodigoProducto(), request.getCodigoProveedor(), request.getMontoReferencia());
+        boolean editable = esRecarga || sugerido == null || sugerido.compareTo(BigDecimal.ZERO) <= 0;
+        BigDecimal min = esRecarga ? new BigDecimal("1000.00") : (editable ? null : sugerido);
+        BigDecimal max = esRecarga ? new BigDecimal("500000.00") : (editable ? null : sugerido);
 
         ValidacionReferenciaResponse res = new ValidacionReferenciaResponse();
         res.setCodigo(0);
@@ -274,6 +313,48 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         res.setTokenValidacion(generarTokenValidacion(
                 infoToken, tipoOp, request.getCodigoProducto(), ref1, trace, sugerido, min, max, editable));
         return res;
+    }
+
+    private BigDecimal resolverPrecioFijoLineaOPin(
+            String tipoOp,
+            String codigoProducto,
+            String codigoProveedor,
+            BigDecimal montoCliente) {
+        if (catalogoService != null && tieneTexto(codigoProducto)) {
+            try {
+                CatalogoServiciosResponse cat = catalogoService.consultarCatalogo(new CatalogoBusquedaRequest());
+                List<CatalogoServicioItem> items = cat != null && cat.getServicios() != null
+                        ? cat.getServicios()
+                        : Collections.emptyList();
+                List<BigDecimal> preciosCoincidentes = items.stream()
+                        .filter(item -> tipoOp.equalsIgnoreCase(item.getTipoOperacion()))
+                        .filter(item -> codigoProducto.equals(item.getCodigoProducto()))
+                        .filter(item -> !tieneTexto(codigoProveedor)
+                                || !tieneTexto(item.getProveedorCodigo())
+                                || codigoProveedor.equals(item.getProveedorCodigo()))
+                        .map(CatalogoServicioItem::getPrecioSugerido)
+                        .filter(p -> p != null && p.compareTo(BigDecimal.ZERO) > 0)
+                        .distinct()
+                        .toList();
+                if (preciosCoincidentes.size() == 1) {
+                    return preciosCoincidentes.get(0);
+                }
+                if (preciosCoincidentes.size() > 1) {
+                    if (montoCliente != null) {
+                        for (BigDecimal candidato : preciosCoincidentes) {
+                            if (candidato.compareTo(montoCliente) == 0) {
+                                return candidato;
+                            }
+                        }
+                    }
+                    return preciosCoincidentes.get(0);
+                }
+            } catch (Exception ex) {
+                log.debug("No se pudo contrastar precio fijo de {} contra catalogo ({}): {}",
+                        tipoOp, codigoProducto, ex.getMessage());
+            }
+        }
+        return montoCliente != null && montoCliente.compareTo(BigDecimal.ZERO) > 0 ? montoCliente : null;
     }
 
     private ValidacionReferenciaResponse validarRecaudoV1(

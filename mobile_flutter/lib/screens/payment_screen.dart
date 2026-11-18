@@ -144,6 +144,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
+  bool get _isPrecioFijoServicio {
+    final srv = _servicioSeleccionado;
+    return srv != null &&
+        srv.precioSugerido != null &&
+        srv.precioSugerido! > 0 &&
+        (srv.tipoOperacion == 'PAQUETE' || srv.tipoOperacion == 'PIN');
+  }
+
   Future<void> _validarReferencia() async {
     final srv = _servicioSeleccionado;
     final ref1 = _ref1Ctrl.text.trim();
@@ -171,8 +179,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
         if (srv.proveedorCodigo != null) 'codigoProveedor': srv.proveedorCodigo,
         'referencia1': ref1,
         if (_ref2Ctrl.text.trim().isNotEmpty) 'referencia2': _ref2Ctrl.text.trim(),
-        if (double.tryParse(_montoCtrl.text.trim()) != null)
-          'montoReferencia': double.parse(_montoCtrl.text.trim()),
+        // En paquetes y pines digitales enviamos el precio oficial del catálogo, nunca un valor editado antes de validar.
+        if (_isPrecioFijoServicio) 'montoReferencia': srv.precioSugerido,
         if (_iacCtrl.text.trim().isNotEmpty) 'codigoIac': _iacCtrl.text.trim(),
       });
       if (mounted) {
@@ -186,8 +194,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
               if (_opcionSeleccionada?.monto != null) {
                 _montoCtrl.text = _opcionSeleccionada!.monto!.toStringAsFixed(2);
               }
-            } else if (resp.montoSugerido != null) {
+            } else if (resp.montoSugerido != null && resp.montoSugerido! > 0) {
               _montoCtrl.text = resp.montoSugerido!.toStringAsFixed(2);
+            } else if (_isPrecioFijoServicio) {
+              _montoCtrl.text = srv.precioSugerido!.toStringAsFixed(2);
             }
           }
         });
@@ -1075,15 +1085,22 @@ class _PaymentScreenState extends State<PaymentScreen> {
                 ],
                 TextField(
                   controller: _montoCtrl,
-                  readOnly: !(_validacion?.montoEditable ?? true),
+                  readOnly: !validacionOk ||
+                      _isPrecioFijoServicio ||
+                      !(_validacion?.montoEditable ?? true),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: InputDecoration(
                     labelText: 'Monto a pagar (MXN)',
                     prefixText: '\$ ',
-                    helperText: (_validacion?.montoMinimo != null ||
-                            _validacion?.montoMaximo != null)
-                        ? 'Rango permitido: ${AppFormatters.formatCurrency(_validacion?.montoMinimo)} a ${AppFormatters.formatCurrency(_validacion?.montoMaximo)}'
-                        : null,
+                    helperText: (_isPrecioFijoServicio ||
+                            _validacion?.montoEditable == false)
+                        ? 'Precio fijo preestablecido por el producto (no editable)'
+                        : !validacionOk
+                            ? 'Valida primero la referencia para habilitar el importe'
+                            : (_validacion?.montoMinimo != null ||
+                                    _validacion?.montoMaximo != null)
+                                ? 'Rango permitido: ${AppFormatters.formatCurrency(_validacion?.montoMinimo)} a ${AppFormatters.formatCurrency(_validacion?.montoMaximo)}'
+                                : null,
                     border: const OutlineInputBorder(),
                   ),
                 ),
