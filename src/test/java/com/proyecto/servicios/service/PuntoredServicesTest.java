@@ -16,6 +16,7 @@ import com.proyecto.servicios.entity.sf.Usuario;
 import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.puntored.CatalogoBusquedaRequest;
+import com.proyecto.servicios.model.puntored.CatalogoServicioItem;
 import com.proyecto.servicios.model.puntored.CatalogoServiciosResponse;
 import com.proyecto.servicios.model.puntored.DetallePagoRequest;
 import com.proyecto.servicios.model.puntored.DetallePagoResponse;
@@ -485,6 +486,60 @@ class PuntoredServicesTest {
                 .isInstanceOf(ValidacionException.class)
                 .extracting("codigo").isEqualTo(MensajeError.DATOS_NO_VALIDOS.getCodigo());
         properties.setPermitirSimulacion(true);
+    }
+
+    @Test
+    void validarReferencia_bloqueaPrecioFijoDePaqueteDesdeCatalogoYMantieneRecargaEditable() {
+        InfoToken owner = new InfoToken(7, Roles.USUARIO_NORMAL);
+        CatalogoServicioItem pkg = new CatalogoServicioItem();
+        pkg.setTipoOperacion("PAQUETE");
+        pkg.setCodigoProducto("PKG15");
+        pkg.setProveedorCodigo("CLARO");
+        pkg.setPrecioSugerido(new BigDecimal("15600.00"));
+
+        CatalogoServiciosResponse catResp = new CatalogoServiciosResponse();
+        catResp.setServicios(List.of(pkg));
+        PuntoredCatalogoService mockCatalogo = mock(PuntoredCatalogoService.class);
+        when(mockCatalogo.consultarCatalogo(any())).thenReturn(catResp);
+
+        PuntoredPagoServiceImpl pagoConCatalogo = new PuntoredPagoServiceImpl(
+                tokenService, apiClient, properties, cuentaRepository,
+                usuarioRepository, transaccionPagoRepository,
+                cryptoUtil, hashUtil, objectMapper, mockCatalogo
+        );
+
+        // Paquete: aunque el cliente intente mandar otro montoReferencia, prevalece el precio fijo del catalogo
+        ValidarReferenciaRequest pkgReq = new ValidarReferenciaRequest();
+        pkgReq.setTipoOperacion("PAQUETE");
+        pkgReq.setCodigoProducto("PKG15");
+        pkgReq.setCodigoProveedor("CLARO");
+        pkgReq.setReferencia1("3001234567");
+        pkgReq.setMontoReferencia(new BigDecimal("1000.00"));
+
+        ValidacionReferenciaResponse pkgRes = pagoConCatalogo.validarReferencia(pkgReq, owner);
+        assertThat(pkgRes.getReferenciaValida()).isTrue();
+        assertThat(pkgRes.getMontoEditable()).isFalse();
+        assertThat(pkgRes.getMontoSugerido()).isEqualByComparingTo("15600.00");
+
+        PagoPuntoredRequest alteredPago = construirPagoRequest(pkgRes, new BigDecimal("1000.00"));
+        alteredPago.setTipoOperacion("PAQUETE");
+        alteredPago.setCodigoProducto("PKG15");
+        assertThatThrownBy(() -> pagoConCatalogo.realizarPago(alteredPago, owner))
+                .isInstanceOf(ValidacionException.class)
+                .extracting("codigo").isEqualTo(MensajeError.PUNTORED_MONTO_INVALIDO.getCodigo());
+
+        // Recarga: sigue siendo editable entre 1,000 y 500,000 aunque traiga montoReferencia sugerido
+        ValidarReferenciaRequest recReq = new ValidarReferenciaRequest();
+        recReq.setTipoOperacion("RECARGA");
+        recReq.setCodigoProducto("737");
+        recReq.setReferencia1("3001234567");
+        recReq.setMontoReferencia(new BigDecimal("5000.00"));
+
+        ValidacionReferenciaResponse recRes = pagoConCatalogo.validarReferencia(recReq, owner);
+        assertThat(recRes.getReferenciaValida()).isTrue();
+        assertThat(recRes.getMontoEditable()).isTrue();
+        assertThat(recRes.getMontoMinimo()).isEqualByComparingTo("1000.00");
+        assertThat(recRes.getMontoMaximo()).isEqualByComparingTo("500000.00");
     }
 
     private PuntoredHttpResult okResult(String json) throws Exception {
