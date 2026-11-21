@@ -9,6 +9,7 @@ import com.proyecto.servicios.config.SeguridadGuard.InfoToken;
 import com.proyecto.servicios.controller.CatalogoController;
 import com.proyecto.servicios.controller.CuentaUsuarioController;
 import com.proyecto.servicios.controller.PuntoredPagoController;
+import com.proyecto.servicios.entity.CatalogoPuntoredCache;
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Cuenta;
 import com.proyecto.servicios.entity.sf.TransaccionPago;
@@ -26,6 +27,7 @@ import com.proyecto.servicios.model.puntored.PagoPuntoredRequest;
 import com.proyecto.servicios.model.puntored.PagoPuntoredResponse;
 import com.proyecto.servicios.model.puntored.ValidacionReferenciaResponse;
 import com.proyecto.servicios.model.puntored.ValidarReferenciaRequest;
+import com.proyecto.servicios.repositorys.CatalogoPuntoredCacheRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.TransaccionPagoRepository;
 import com.proyecto.servicios.repositorys.sf.UsuarioRepository;
@@ -540,6 +542,47 @@ class PuntoredServicesTest {
         assertThat(recRes.getMontoEditable()).isTrue();
         assertThat(recRes.getMontoMinimo()).isEqualByComparingTo("1000.00");
         assertThat(recRes.getMontoMaximo()).isEqualByComparingTo("500000.00");
+    }
+
+    @Test
+    void catalogoService_usaPersistenciaEnBdYRespaldoAnteCaidaExterna() throws Exception {
+        CatalogoPuntoredCacheRepository cacheRepo = mock(CatalogoPuntoredCacheRepository.class);
+        CatalogoServicioItem item = new CatalogoServicioItem();
+        item.setClaveUnica("RECARGA-737");
+        item.setTipoOperacion("RECARGA");
+        item.setCategoria("Recargas");
+        item.setNombreServicio("CLARO");
+        item.setNombreProducto("Recarga CLARO");
+
+        PuntoredCatalogoServiceImpl.CatalogoSnapshot snap = new PuntoredCatalogoServiceImpl.CatalogoSnapshot(
+                "PUNTORED_H2H_V2", "1000.00", List.of(), List.of(item), java.util.Map.of()
+        );
+        CatalogoPuntoredCache vigente = new CatalogoPuntoredCache();
+        vigente.setClave("PUNTORED_CATALOGO_V1");
+        vigente.setFuenteDatos("PUNTORED_H2H_V2");
+        vigente.setTotalServicios(1);
+        vigente.setPayloadJson(objectMapper.writeValueAsString(snap));
+        vigente.setActualizadoEn(LocalDateTime.now(ZoneId.systemDefault()).minusMinutes(10));
+
+        when(cacheRepo.findById("PUNTORED_CATALOGO_V1")).thenReturn(Optional.of(vigente));
+
+        PuntoredCatalogoServiceImpl conBd = new PuntoredCatalogoServiceImpl(
+                tokenService, apiClient, properties, objectMapper, null, cacheRepo, 3600L, 86400L);
+
+        CatalogoServiciosResponse desdeBd = conBd.consultarCatalogo(new CatalogoBusquedaRequest());
+        assertThat(desdeBd.getFuenteDatos()).isEqualTo("CACHE_BASE_DATOS");
+        assertThat(desdeBd.getServicios()).hasSize(1);
+        verify(apiClient, never()).postJson(anyString(), any(), anyString());
+
+        // Si se fuerza recarga y la API externa falla, cae al respaldo guardado en BD
+        when(apiClient.postJson(anyString(), any(), anyString()))
+                .thenReturn(new PuntoredHttpResult(503, false, true, null, null));
+
+        CatalogoBusquedaRequest forzado = new CatalogoBusquedaRequest();
+        forzado.setForzarRecarga(true);
+        CatalogoServiciosResponse respaldo = conBd.consultarCatalogo(forzado);
+        assertThat(respaldo.getFuenteDatos()).isEqualTo("CACHE_BASE_DATOS_RESPALDO");
+        assertThat(respaldo.getServicios()).hasSize(1);
     }
 
     private PuntoredHttpResult okResult(String json) throws Exception {

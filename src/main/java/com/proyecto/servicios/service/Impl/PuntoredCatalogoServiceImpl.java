@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.proyecto.servicios.client.PuntoredApiClient;
 import com.proyecto.servicios.client.PuntoredHttpResult;
 import com.proyecto.servicios.config.PuntoredProperties;
+import com.proyecto.servicios.entity.CatalogoPuntoredCache;
 import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.puntored.CatalogoBusquedaRequest;
 import com.proyecto.servicios.model.puntored.CatalogoCategoriaItem;
 import com.proyecto.servicios.model.puntored.CatalogoServicioItem;
 import com.proyecto.servicios.model.puntored.CatalogoServiciosResponse;
+import com.proyecto.servicios.repositorys.CatalogoPuntoredCacheRepository;
 import com.proyecto.servicios.service.PuntoredCatalogoService;
 import com.proyecto.servicios.service.PuntoredTokenService;
 import lombok.extern.slf4j.Slf4j;
@@ -23,12 +25,15 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -41,6 +46,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
 
     private static final String REDIS_KEY_SNAPSHOT = "puntored:catalogo:snapshot:v1";
+    private static final String DB_KEY_SNAPSHOT = "PUNTORED_CATALOGO_V1";
     private static final String KEY_POS = "pointOfSale";
     private static final String KEY_DATA = "data";
     private static final String OP_RECARGA = "RECARGA";
@@ -54,9 +60,12 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
     private final PuntoredProperties properties;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
+    private final CatalogoPuntoredCacheRepository catalogoCacheRepository;
     private final long cacheTtlSeconds;
+    private final long dbCacheTtlSeconds;
 
     private final AtomicReference<CachedSnapshot> memoriaCache = new AtomicReference<>();
+    private final Object snapshotLock = new Object();
 
     @Autowired
     public PuntoredCatalogoServiceImpl(
@@ -65,13 +74,19 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             PuntoredProperties properties,
             ObjectMapper objectMapper,
             ObjectProvider<StringRedisTemplate> redisTemplateProvider,
-            @Value("${app.cache.puntored.ttl-seconds:3600}") long cacheTtlSeconds) {
-        this.tokenService = tokenService;
-        this.apiClient = apiClient;
-        this.properties = properties;
-        this.objectMapper = objectMapper;
-        this.redisTemplate = redisTemplateProvider != null ? redisTemplateProvider.getIfAvailable() : null;
-        this.cacheTtlSeconds = cacheTtlSeconds > 0 ? cacheTtlSeconds : 3600L;
+            ObjectProvider<CatalogoPuntoredCacheRepository> catalogoCacheRepositoryProvider,
+            @Value("${app.cache.puntored.ttl-seconds:3600}") long cacheTtlSeconds,
+            @Value("${app.cache.puntored.db-ttl-seconds:86400}") long dbCacheTtlSeconds) {
+        this(
+                tokenService,
+                apiClient,
+                properties,
+                objectMapper,
+                redisTemplateProvider != null ? redisTemplateProvider.getIfAvailable() : null,
+                catalogoCacheRepositoryProvider != null ? catalogoCacheRepositoryProvider.getIfAvailable() : null,
+                cacheTtlSeconds,
+                dbCacheTtlSeconds
+        );
     }
 
     public PuntoredCatalogoServiceImpl(
@@ -81,18 +96,33 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             ObjectMapper objectMapper,
             StringRedisTemplate redisTemplate,
             long cacheTtlSeconds) {
+        this(tokenService, apiClient, properties, objectMapper, redisTemplate, null, cacheTtlSeconds, 86400L);
+    }
+
+    public PuntoredCatalogoServiceImpl(
+            PuntoredTokenService tokenService,
+            PuntoredApiClient apiClient,
+            PuntoredProperties properties,
+            ObjectMapper objectMapper,
+            StringRedisTemplate redisTemplate,
+            CatalogoPuntoredCacheRepository catalogoCacheRepository,
+            long cacheTtlSeconds,
+            long dbCacheTtlSeconds) {
         this.tokenService = tokenService;
         this.apiClient = apiClient;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
+        this.catalogoCacheRepository = catalogoCacheRepository;
         this.cacheTtlSeconds = cacheTtlSeconds > 0 ? cacheTtlSeconds : 3600L;
+        this.dbCacheTtlSeconds = dbCacheTtlSeconds > 0 ? dbCacheTtlSeconds : 86400L;
     }
 
     @Override
     public CatalogoServiciosResponse consultarCatalogo(CatalogoBusquedaRequest request) {
         CatalogoBusquedaRequest filtro = request != null ? request : new CatalogoBusquedaRequest();
-        if (Boolean.TRUE.equals(filtro.getForzarRecarga())) {
+        boolean forzarRecarga = Boolean.TRUE.equals(filtro.getForzarRecarga());
+        if (forzarRecarga) {
             invalidarCache();
         }
 
@@ -103,7 +133,7 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             return consultarPinesPorTipo(filtro.getIdTipoPin(), filtro.getTexto());
         }
 
-        CatalogoSnapshot snapshot = obtenerSnapshotBase();
+        CatalogoSnapshot snapshot = obtenerSnapshotBase(forzarRecarga);
         List<CatalogoServicioItem> servicios = new ArrayList<>(snapshot.servicios);
 
         if (tieneTexto(filtro.getIdCategoriaRecaudo())) {
@@ -125,22 +155,52 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
         return response;
     }
 
-    private CatalogoSnapshot obtenerSnapshotBase() {
-        CachedSnapshot enMemoria = memoriaCache.get();
-        if (enMemoria != null && Instant.now().isBefore(enMemoria.expiraEn)) {
-            return copiaConFuente(enMemoria.snapshot, "CACHE_MEMORIA");
+    private CatalogoSnapshot obtenerSnapshotBase(boolean forzarRecarga) {
+        if (!forzarRecarga) {
+            CachedSnapshot enMemoria = memoriaCache.get();
+            if (enMemoria != null && Instant.now().isBefore(enMemoria.expiraEn)) {
+                return copiaConFuente(enMemoria.snapshot, "CACHE_MEMORIA");
+            }
         }
 
-        CatalogoSnapshot desdeRedis = leerDesdeRedis();
-        if (desdeRedis != null) {
-            memoriaCache.set(new CachedSnapshot(desdeRedis, Instant.now().plusSeconds(cacheTtlSeconds)));
-            return copiaConFuente(desdeRedis, "CACHE_REDIS");
-        }
+        synchronized (snapshotLock) {
+            if (!forzarRecarga) {
+                CachedSnapshot enMemoria = memoriaCache.get();
+                if (enMemoria != null && Instant.now().isBefore(enMemoria.expiraEn)) {
+                    return copiaConFuente(enMemoria.snapshot, "CACHE_MEMORIA");
+                }
 
-        CatalogoSnapshot fresco = construirSnapshotVivo();
-        memoriaCache.set(new CachedSnapshot(fresco, Instant.now().plusSeconds(cacheTtlSeconds)));
-        guardarEnRedis(fresco);
-        return fresco;
+                CatalogoSnapshot desdeRedis = leerDesdeRedis();
+                if (desdeRedis != null) {
+                    memoriaCache.set(new CachedSnapshot(desdeRedis, Instant.now().plusSeconds(cacheTtlSeconds)));
+                    return copiaConFuente(desdeRedis, "CACHE_REDIS");
+                }
+
+                CatalogoSnapshot desdeBd = leerDesdeBaseDatos(false);
+                if (desdeBd != null) {
+                    memoriaCache.set(new CachedSnapshot(desdeBd, Instant.now().plusSeconds(cacheTtlSeconds)));
+                    guardarEnRedis(desdeBd);
+                    return copiaConFuente(desdeBd, "CACHE_BASE_DATOS");
+                }
+            }
+
+            try {
+                CatalogoSnapshot fresco = construirSnapshotVivo();
+                memoriaCache.set(new CachedSnapshot(fresco, Instant.now().plusSeconds(cacheTtlSeconds)));
+                guardarEnRedis(fresco);
+                guardarEnBaseDatos(fresco);
+                return fresco;
+            } catch (RuntimeException ex) {
+                CatalogoSnapshot respaldo = leerDesdeBaseDatos(true);
+                if (respaldo != null) {
+                    log.warn("No se pudo actualizar catalogo en vivo ({}); usando respaldo guardado en base de datos.",
+                            ex.getMessage());
+                    memoriaCache.set(new CachedSnapshot(respaldo, Instant.now().plusSeconds(Math.min(cacheTtlSeconds, 300L))));
+                    return copiaConFuente(respaldo, "CACHE_BASE_DATOS_RESPALDO");
+                }
+                throw ex;
+            }
+        }
     }
 
     private CatalogoSnapshot construirSnapshotVivo() {
@@ -671,6 +731,55 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             redisTemplate.opsForValue().set(REDIS_KEY_SNAPSHOT, json, Duration.ofSeconds(cacheTtlSeconds));
         } catch (Exception ex) {
             log.debug("Redis no disponible al guardar catalogo PuntoRed: {}", ex.getMessage());
+        }
+    }
+
+    private CatalogoSnapshot leerDesdeBaseDatos(boolean ignorarExpiracion) {
+        if (catalogoCacheRepository == null) {
+            return null;
+        }
+        try {
+            Optional<CatalogoPuntoredCache> registroOpt = catalogoCacheRepository.findById(DB_KEY_SNAPSHOT);
+            if (registroOpt.isEmpty()) {
+                return null;
+            }
+            CatalogoPuntoredCache registro = registroOpt.get();
+            if (!tieneTexto(registro.getPayloadJson())) {
+                return null;
+            }
+            if (!ignorarExpiracion) {
+                if (registro.getActualizadoEn() == null) {
+                    return null;
+                }
+                LocalDateTime limite = LocalDateTime.now(ZoneId.systemDefault()).minusSeconds(dbCacheTtlSeconds);
+                if (!registro.getActualizadoEn().isAfter(limite)) {
+                    return null;
+                }
+            }
+            return objectMapper.readValue(registro.getPayloadJson(), CatalogoSnapshot.class);
+        } catch (Exception ex) {
+            log.warn("No se pudo leer respaldo de catalogo PuntoRed desde base de datos: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private void guardarEnBaseDatos(CatalogoSnapshot snapshot) {
+        if (catalogoCacheRepository == null || snapshot == null) {
+            return;
+        }
+        try {
+            String json = objectMapper.writeValueAsString(snapshot);
+            CatalogoPuntoredCache registro = catalogoCacheRepository.findById(DB_KEY_SNAPSHOT)
+                    .orElseGet(CatalogoPuntoredCache::new);
+            registro.setClave(DB_KEY_SNAPSHOT);
+            registro.setFuenteDatos(tieneTexto(snapshot.fuenteDatos) ? snapshot.fuenteDatos : "PUNTORED_H2H_V2");
+            registro.setSaldoComercio(snapshot.saldoComercio);
+            registro.setTotalServicios(snapshot.servicios != null ? snapshot.servicios.size() : 0);
+            registro.setPayloadJson(json);
+            registro.setActualizadoEn(LocalDateTime.now(ZoneId.systemDefault()));
+            catalogoCacheRepository.save(registro);
+        } catch (Exception ex) {
+            log.warn("No se pudo persistir catalogo PuntoRed en base de datos: {}", ex.getMessage());
         }
     }
 
