@@ -225,7 +225,7 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
                 ? "Catalogo oficial GestoPago Mexico consultado exitosamente"
                 : "Catalogo GestoPago Mexico (respaldo simulado persistido en BD por bloqueo IP oficial)");
         response.setFuenteDatos(tieneOficial ? ProductoService.FUENTE_GESTOPAGO_OFICIAL : ProductoService.FUENTE_GESTOPAGO_SIMULADO);
-        response.setSaldoComercio(productoService.consultarSaldoComercioMx());
+        response.setSaldoComercio(productoService.consultarSaldoComercioMx(forzarRecarga));
         response.setCategorias(filtrarCategorias(categorias, filtro));
         response.setServicios(filtrados);
         return response;

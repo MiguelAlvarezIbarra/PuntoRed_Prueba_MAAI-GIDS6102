@@ -40,6 +40,9 @@ public class ProductoService {
     private final ProductoRepository productoRepository;
     private final ProductoCacheService productoCacheService;
 
+    private volatile String saldoComercioCache;
+    private volatile long saldoComercioCacheExpiraMs = 0L;
+
     @Value("${app.cache.productos.db-ttl-seconds:86400}")
     private long dbCacheTtlSeconds = 86400L;
 
@@ -145,6 +148,15 @@ public class ProductoService {
     }
 
     public String consultarSaldoComercioMx() {
+        return consultarSaldoComercioMx(false);
+    }
+
+    public String consultarSaldoComercioMx(boolean forzarConsulta) {
+        long ahoraMs = System.currentTimeMillis();
+        if (!forzarConsulta && saldoComercioCache != null && ahoraMs < saldoComercioCacheExpiraMs) {
+            return saldoComercioCache;
+        }
+        String resultado = null;
         try {
             Optional<GestoPagoToken> tokOpt = gestoPagoTokenService.obtenerTokenActual();
             if (tokOpt.isPresent() && tokOpt.get().getToken() != null && !tokOpt.get().getToken().isBlank()) {
@@ -158,7 +170,7 @@ public class ProductoService {
                         if ("10".equals(cod) || "01".equals(cod) || "1".equals(cod)) {
                             Object saldo = resp.opt("SALDO");
                             if (saldo != null && !String.valueOf(saldo).isBlank()) {
-                                return String.valueOf(saldo);
+                                resultado = String.valueOf(saldo);
                             }
                         }
                     }
@@ -167,7 +179,14 @@ public class ProductoService {
         } catch (Exception ex) {
             log.debug("No se pudo consultar saldo oficial GestoPago (getBalance.do): {}", ex.getMessage());
         }
-        return respaldoSimuladoActivo ? "150000.00" : null;
+        if (resultado == null && respaldoSimuladoActivo) {
+            resultado = "150000.00";
+        }
+        if (resultado != null) {
+            saldoComercioCache = resultado;
+            saldoComercioCacheExpiraMs = ahoraMs + 900_000L; // 15 min para no repetir llamadas externas
+        }
+        return resultado;
     }
 
     private boolean tieneCatalogoVigenteEnBd() {
