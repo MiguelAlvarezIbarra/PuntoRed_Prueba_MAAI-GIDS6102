@@ -104,7 +104,8 @@ class ProductoServiceTest {
     void sincronizarProductos_guardaProductoCuandoTodoSaleBien() {
         when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
         when(gestoPagoServiceClient.getProductList("Bearer token-valido")).thenReturn(XML_UN_PRODUCTO);
-        when(productoRepository.findByIdProductoAndIdServicio(101, 5)).thenReturn(Optional.empty());
+        when(productoRepository.findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(101, 5))
+                .thenReturn(Optional.empty());
 
         productoService.sincronizarProductos();
 
@@ -119,7 +120,8 @@ class ProductoServiceTest {
     void sincronizarProductos_guardaMultiplesProductos() {
         when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
         when(gestoPagoServiceClient.getProductList("Bearer token-valido")).thenReturn(XML_MULTIPLES_PRODUCTOS);
-        when(productoRepository.findByIdProductoAndIdServicio(any(), any())).thenReturn(Optional.empty());
+        when(productoRepository.findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(any(), any()))
+                .thenReturn(Optional.empty());
 
         int total = productoService.sincronizarProductos();
         assertThat(total).isEqualTo(2);
@@ -225,7 +227,8 @@ class ProductoServiceTest {
 
         when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
         when(gestoPagoServiceClient.getProductList("Bearer token-valido")).thenReturn(xmlOficial);
-        when(productoRepository.findByIdProductoAndIdServicio(10, 3)).thenReturn(Optional.empty());
+        when(productoRepository.findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(10, 3))
+                .thenReturn(Optional.empty());
 
         int total = productoService.sincronizarProductos();
         assertThat(total).isEqualTo(1);
@@ -250,7 +253,8 @@ class ProductoServiceTest {
 
         when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
         when(gestoPagoServiceClient.getProductList("Bearer token-valido")).thenReturn(xmlBloqueoIp);
-        when(productoRepository.findByIdProductoAndIdServicio(any(), any())).thenReturn(Optional.empty());
+        when(productoRepository.findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(any(), any()))
+                .thenReturn(Optional.empty());
 
         int total = productoService.sincronizarProductos();
         assertThat(total).isGreaterThanOrEqualTo(50);

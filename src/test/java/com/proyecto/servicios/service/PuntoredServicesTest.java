@@ -612,7 +612,8 @@ class PuntoredServicesTest {
         att50.setPrecio("50.00");
         att50.setTipoFront(1);
         att50.setTipoOperacion("RECARGA");
-        when(prodRepo.findByIdProductoAndIdServicio(3002, 115)).thenReturn(Optional.of(att50));
+        when(prodRepo.findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(3002, 115))
+                .thenReturn(Optional.of(att50));
 
         String xmlBloqueoIp = "<?xml version='1.0' encoding='UTF-8'?>"
                 + "<RESPONSE><NUM_AUTORIZACION>-1</NUM_AUTORIZACION>"
@@ -674,6 +675,15 @@ class PuntoredServicesTest {
         assertThat(cfeRes.getReferenciaValida()).isTrue();
         assertThat(cfeRes.getMontoSugerido()).isGreaterThan(BigDecimal.ZERO);
         verify(gpClient).verifyReference(eq("Bearer gp-jwt-ok"), anyString());
+
+        // 4. Resiliencia: si la consulta al repositorio falla, no lanza Codigo 99 y usa montoReferencia
+        when(prodRepo.findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(3002, 115))
+                .thenThrow(new RuntimeException("duplicate rows"));
+        valRec.setMontoReferencia(new BigDecimal("50.00"));
+        ValidacionReferenciaResponse valResiliente = pagoMx.validarReferencia(valRec, owner);
+        assertThat(valResiliente.getCodigo()).isZero();
+        assertThat(valResiliente.getReferenciaValida()).isTrue();
+        assertThat(valResiliente.getMontoSugerido()).isEqualByComparingTo("50.00");
     }
 
     private PuntoredHttpResult okResult(String json) throws Exception {

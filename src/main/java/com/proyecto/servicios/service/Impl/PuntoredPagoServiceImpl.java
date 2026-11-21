@@ -1306,16 +1306,18 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         int idProd = parseEnteroSeguro(codigoProducto);
         int idServ = parseEnteroSeguro(tieneTexto(idConvenio) ? idConvenio : codigoProveedor);
         if (productoRepository != null && idProd > 0 && idServ > 0) {
-            Optional<Producto> prodOpt = productoRepository.findByIdProductoAndIdServicio(idProd, idServ);
-            if (prodOpt.isPresent() && tieneTexto(prodOpt.get().getPrecio())) {
-                try {
+            try {
+                Optional<Producto> prodOpt = productoRepository
+                        .findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(idProd, idServ);
+                if (prodOpt.isPresent() && tieneTexto(prodOpt.get().getPrecio())) {
                     BigDecimal p = new BigDecimal(prodOpt.get().getPrecio().trim().replace(",", ""));
                     if (p.compareTo(BigDecimal.ZERO) > 0) {
                         return p.setScale(2, RoundingMode.HALF_UP);
                     }
-                } catch (Exception ignored) {
-                    // Continuar con fallback de catalogo
                 }
+            } catch (Exception ex) {
+                log.warn("No se pudo consultar precio en tabla productos para idProducto={} idServicio={}: {}",
+                        idProd, idServ, ex.getMessage());
             }
         }
         if (catalogoService != null && tieneTexto(codigoProducto)) {
