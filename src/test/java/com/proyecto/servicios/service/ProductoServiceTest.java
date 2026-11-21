@@ -216,6 +216,32 @@ class ProductoServiceTest {
     }
 
     @Test
+    void sincronizarProductos_parseaAtributoProductoYMetadatosOficialesMexico() {
+        String xmlOficial = "<?xml version='1.0' encoding='UTF-8'?>"
+                + "<RESPONSE><MENSAJE><CODIGO>01</CODIGO><TEXTO>Operacion realizada con exito</TEXTO></MENSAJE>"
+                + "<PRODUCTOS><producto servicio='AT&amp;T' producto='AT&amp;T $50' idServicio='3' idProducto='10' "
+                + "idCatTipoServicio='3' tipoFront='1' precio='50.0' tipoReferencia='a'>"
+                + "<legend>Recarga AT&amp;T Mexico</legend></producto></PRODUCTOS></RESPONSE>";
+
+        when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
+        when(gestoPagoServiceClient.getProductList("Bearer token-valido")).thenReturn(xmlOficial);
+        when(productoRepository.findByIdProductoAndIdServicio(10, 3)).thenReturn(Optional.empty());
+
+        int total = productoService.sincronizarProductos();
+        assertThat(total).isEqualTo(1);
+
+        verify(productoRepository).saveAll(argThat((Iterable<Producto> lista) -> {
+            Producto p = lista.iterator().next();
+            return "AT&T $50".equals(p.getNombreProducto())
+                    && "AT&T".equals(p.getNombreServicio())
+                    && "AT&T".equals(p.getCategoria())
+                    && "RECARGA".equals(p.getTipoOperacion())
+                    && "https://gestopago.portalventas.net/sistema/images/gestopago/servicios/3.png".equals(p.getLogoUrl())
+                    && "50.0".equals(p.getPrecio());
+        }));
+    }
+
+    @Test
     void obtenerTodosLosProductos_retornaListaDesdeRepositorioOCache() {
         Producto p = new Producto();
         p.setIdProducto(1);
