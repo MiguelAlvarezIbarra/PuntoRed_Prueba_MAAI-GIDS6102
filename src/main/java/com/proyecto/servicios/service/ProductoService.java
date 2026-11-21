@@ -41,6 +41,9 @@ public class ProductoService {
     @Value("${app.cache.productos.db-ttl-seconds:86400}")
     private long dbCacheTtlSeconds = 86400L;
 
+    @Value("${gestopago.productos.sync-on-startup:false}")
+    private boolean syncOnStartupEnabled = true;
+
     public ProductoService(GestoPagoServiceClient gestoPagoServiceClient,
                            GestoPagoTokenService gestoPagoTokenService,
                            ProductoRepository productoRepository,
@@ -61,6 +64,10 @@ public class ProductoService {
             } catch (Exception e) {
                 log.warn("No se pudo precargar caché de productos desde BD: {}", e.getMessage());
             }
+            return;
+        }
+        if (!syncOnStartupEnabled) {
+            log.info("Sincronización automática de GestoPago al arranque deshabilitada (gestopago.productos.sync-on-startup=false) para respetar el límite diario de 3 consultas/IP.");
             return;
         }
         try {
@@ -214,6 +221,10 @@ public class ProductoService {
             producto.setPrecio(dto.getPrecio());
             producto.setNombreProducto(dto.getNombreProducto());
             producto.setNombreServicio(dto.getNombreServicio());
+            producto.setDescripcion(dto.getDescripcion());
+            producto.setLogoUrl(dto.getLogoUrl());
+            producto.setCategoria(dto.getCategoria());
+            producto.setTipoOperacion(dto.getTipoOperacion());
             producto.setFechaActualizacion(ahora);
 
             nuevosProductos.add(producto);

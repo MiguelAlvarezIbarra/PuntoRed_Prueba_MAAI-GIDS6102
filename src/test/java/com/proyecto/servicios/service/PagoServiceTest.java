@@ -1,6 +1,7 @@
 package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.client.GestoPagoServiceClient;
+import com.proyecto.servicios.config.GestoPagoFeignConfig;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Cuenta;
@@ -19,6 +20,9 @@ import com.proyecto.servicios.repositorys.sf.UsuarioRepository;
 import com.proyecto.servicios.service.Impl.PagoServiceImpl;
 import com.proyecto.servicios.util.GestoPagoCryptoUtil;
 import com.proyecto.servicios.util.HashUtil;
+import feign.Client;
+import feign.RequestInterceptor;
+import feign.RequestTemplate;
 import jakarta.validation.ConstraintValidatorContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -315,10 +320,37 @@ class PagoServiceTest {
         String cifrado = gestoPagoCryptoUtil.cifrarSenTx(senTx);
         assertThat(gestoPagoCryptoUtil.verificarSenTxConToken(cifrado, senTx, "jwt-valido")).isTrue();
 
+        // Con IV explicito de 16 bytes (AES/CBC/PKCS5Padding conforme a especificacion GestoPago)
+        GestoPagoCryptoUtil conIv = new GestoPagoCryptoUtil(
+                "HPo7OLqB4Fkk4E2yGOtwqw8H5fHR9kNx67OR4g4UdlA=",
+                "p5ldmBPdd/9pjC0bDC/nSg=="
+        );
+        String cifradoCbc = conIv.cifrarSenTx(senTx);
+        assertThat(conIv.verificarSenTxConToken(cifradoCbc, senTx, "jwt-valido")).isTrue();
+
         assertThrows(ValidacionException.class,
                 () -> gestoPagoCryptoUtil.verificarSenTxConToken(cifrado, senTx, "INVALID"));
         assertThrows(ValidacionException.class,
                 () -> gestoPagoCryptoUtil.descifrarTexto("no-base64-aes"));
+    }
+
+    @Test
+    void gestoPagoFeignConfig_cargaTrustStoreTlsYApiKey() {
+        GestoPagoFeignConfig config = new GestoPagoFeignConfig();
+        Client client = config.gestoPagoFeignClient(
+                new DefaultResourceLoader(),
+                true,
+                "classpath:certs/gestopago-truststore.p12",
+                "changeit",
+                "PKCS12",
+                "TLSv1.3,TLSv1.2"
+        );
+        assertThat(client).isInstanceOf(Client.Default.class);
+
+        RequestInterceptor interceptor = config.gestoPagoApiKeyInterceptor("test-api-key-123");
+        RequestTemplate template = new RequestTemplate();
+        interceptor.apply(template);
+        assertThat(template.headers().get("X-API-Key")).containsExactly("test-api-key-123");
     }
 
     private ConstraintValidatorContext mockContext() {

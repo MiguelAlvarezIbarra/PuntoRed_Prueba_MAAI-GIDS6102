@@ -128,7 +128,9 @@ public class PagoServiceImpl implements PagoService {
         String token = obtenerTokenActivo();
         gestoPagoCryptoUtil.verificarSenTxConToken(senTxCifrado, senTxRequest, token);
 
-        String formBody = "signed=" + URLEncoder.encode(senTxCifrado, StandardCharsets.UTF_8);
+        String randomParam = System.currentTimeMillis() + "_rand";
+        String formBody = "random=" + URLEncoder.encode(randomParam, StandardCharsets.UTF_8)
+                + "&signed=" + URLEncoder.encode(senTxCifrado, StandardCharsets.UTF_8);
         String xmlResponse = gestoPagoServiceClient.sendTx("Bearer " + token, formBody);
         ResultadoGestoPago resultado = parsearRespuestaSendTx(xmlResponse);
 
