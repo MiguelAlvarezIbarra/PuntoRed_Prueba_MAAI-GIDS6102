@@ -424,7 +424,8 @@ class PagoPuntoredResponse {
   }
 
   bool get esSimulada =>
-      simulada == true || proveedor?.toUpperCase() == 'PUNTORED_SIMULADO';
+      simulada == true ||
+      (proveedor?.toUpperCase().contains('SIMULADO') ?? false);
 }
 
 class HistorialPagoItem {

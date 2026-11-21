@@ -138,7 +138,9 @@ export const PagosPage: React.FC<PagosPageProps> = ({
   const esProductoPrecioFijo = Boolean(
     servicio?.precioSugerido &&
       servicio.precioSugerido > 0 &&
-      (servicio.tipoOperacion === 'PAQUETE' || servicio.tipoOperacion === 'PIN'),
+      (servicio.tipoOperacion === 'RECARGA' ||
+        servicio.tipoOperacion === 'PAQUETE' ||
+        servicio.tipoOperacion === 'PIN'),
   );
 
   const resetValidacion = () => {
@@ -711,7 +713,7 @@ export const PagosPage: React.FC<PagosPageProps> = ({
                       onClick={() => setSimularPago(false)}
                     >
                       <i className="bi bi-cloud-check me-1" />
-                      Real (PuntoRed)
+                      Real (GestoPago)
                     </button>
                     <button
                       type="button"
@@ -725,7 +727,7 @@ export const PagosPage: React.FC<PagosPageProps> = ({
                   <div className="form-text">
                     {simularPago
                       ? 'Valida referencia, saldo y 2FA, y genera un comprobante simulado sin cobro real.'
-                      : 'Ejecuta la operación directamente contra la API real de PuntoRed.'}
+                      : 'Intenta GestoPago oficial; si la IP está bloqueada o no responde, usa respaldo simulado automáticamente.'}
                   </div>
                 </div>
 
@@ -760,7 +762,7 @@ export const PagosPage: React.FC<PagosPageProps> = ({
               <div className="row g-3 mb-3">
                 <div className="col-md-6">
                   <label className="form-label fw-semibold d-flex align-items-center justify-content-between">
-                    <span>Importe a pagar (COP / MXN)</span>
+                    <span>Importe a pagar (MXN)</span>
                     {(esProductoPrecioFijo || validacion?.montoEditable === false) && (
                       <span className="badge text-bg-secondary">
                         <i className="bi bi-lock-fill me-1" />
@@ -905,7 +907,7 @@ export const PagosPage: React.FC<PagosPageProps> = ({
                       TRANSACCIÓN EXITOSA
                     </span>
                     {(resultadoPago.simulada ||
-                      resultadoPago.proveedor?.toUpperCase() === 'PUNTORED_SIMULADO') && (
+                      resultadoPago.proveedor?.toUpperCase().includes('SIMULADO')) && (
                       <span className="badge text-bg-info fs-6 px-3 py-2">
                         <i className="bi bi-flask me-1" />
                         Simulación

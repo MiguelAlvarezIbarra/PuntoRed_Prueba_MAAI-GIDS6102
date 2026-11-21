@@ -1,6 +1,7 @@
 package com.proyecto.servicios.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.proyecto.servicios.client.GestoPagoServiceClient;
 import com.proyecto.servicios.client.PuntoredApiClient;
 import com.proyecto.servicios.client.PuntoredHttpResult;
 import com.proyecto.servicios.config.PuntoredProperties;
@@ -10,6 +11,8 @@ import com.proyecto.servicios.controller.CatalogoController;
 import com.proyecto.servicios.controller.CuentaUsuarioController;
 import com.proyecto.servicios.controller.PuntoredPagoController;
 import com.proyecto.servicios.entity.CatalogoPuntoredCache;
+import com.proyecto.servicios.entity.Producto;
+import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Cuenta;
 import com.proyecto.servicios.entity.sf.TransaccionPago;
@@ -28,6 +31,7 @@ import com.proyecto.servicios.model.puntored.PagoPuntoredResponse;
 import com.proyecto.servicios.model.puntored.ValidacionReferenciaResponse;
 import com.proyecto.servicios.model.puntored.ValidarReferenciaRequest;
 import com.proyecto.servicios.repositorys.CatalogoPuntoredCacheRepository;
+import com.proyecto.servicios.repositorys.ProductoRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.TransaccionPagoRepository;
 import com.proyecto.servicios.repositorys.sf.UsuarioRepository;
@@ -35,6 +39,7 @@ import com.proyecto.servicios.service.Impl.PuntoredCatalogoServiceImpl;
 import com.proyecto.servicios.service.Impl.PuntoredPagoServiceImpl;
 import com.proyecto.servicios.service.Impl.PuntoredTokenServiceImpl;
 import com.proyecto.servicios.util.CryptoUtil;
+import com.proyecto.servicios.util.GestoPagoCryptoUtil;
 import com.proyecto.servicios.util.HashUtil;
 import com.proyecto.servicios.util.Roles;
 import org.junit.jupiter.api.BeforeEach;
@@ -583,6 +588,92 @@ class PuntoredServicesTest {
         CatalogoServiciosResponse respaldo = conBd.consultarCatalogo(forzado);
         assertThat(respaldo.getFuenteDatos()).isEqualTo("CACHE_BASE_DATOS_RESPALDO");
         assertThat(respaldo.getServicios()).hasSize(1);
+    }
+
+    @Test
+    void gestoPagoMx_intentaApiOficialYHaceFallbackSimuladoAnteCodigo05() {
+        GestoPagoServiceClient gpClient = mock(GestoPagoServiceClient.class);
+        GestoPagoTokenService gpTokenSvc = mock(GestoPagoTokenService.class);
+        ProductoRepository prodRepo = mock(ProductoRepository.class);
+        GestoPagoCryptoUtil gpCrypto = new GestoPagoCryptoUtil(
+                "HPo7OLqB4Fkk4E2yGOtwqw8H5fHR9kNx67OR4g4UdlA=",
+                "p5ldmBPdd/9pjC0bDC/nSg=="
+        );
+
+        GestoPagoToken gpTok = new GestoPagoToken();
+        gpTok.setToken("gp-jwt-ok");
+        when(gpTokenSvc.obtenerTokenActual()).thenReturn(Optional.of(gpTok));
+
+        Producto att50 = new Producto();
+        att50.setIdProducto(3002);
+        att50.setIdServicio(115);
+        att50.setNombreServicio("AT&T");
+        att50.setNombreProducto("AT&T $50");
+        att50.setPrecio("50.00");
+        att50.setTipoFront(1);
+        att50.setTipoOperacion("RECARGA");
+        when(prodRepo.findByIdProductoAndIdServicio(3002, 115)).thenReturn(Optional.of(att50));
+
+        String xmlBloqueoIp = "<?xml version='1.0' encoding='UTF-8'?>"
+                + "<RESPONSE><NUM_AUTORIZACION>-1</NUM_AUTORIZACION>"
+                + "<MENSAJE><CODIGO>05</CODIGO><TEXTO>Origen Valido</TEXTO></MENSAJE></RESPONSE>";
+        when(gpClient.sendTx(eq("Bearer gp-jwt-ok"), anyString())).thenReturn(xmlBloqueoIp);
+        when(gpClient.verifyReference(eq("Bearer gp-jwt-ok"), anyString())).thenReturn(xmlBloqueoIp);
+
+        PuntoredPagoServiceImpl pagoMx = new PuntoredPagoServiceImpl(
+                tokenService, apiClient, properties, cuentaRepository, usuarioRepository,
+                transaccionPagoRepository, cryptoUtil, hashUtil, objectMapper, catalogoService,
+                gpClient, gpTokenSvc, gpCrypto, prodRepo, "GESTOPAGO_MX", true, 83
+        );
+
+        InfoToken owner = new InfoToken(10, Roles.USUARIO_NORMAL);
+        Cuenta cuenta = crearCuentaConSaldo(10, new BigDecimal("500.00"));
+        Usuario usuario = crearUsuarioConPin(PIN_2FA);
+        when(cuentaRepository.findByNumeroCuenta(CUENTA_18)).thenReturn(Optional.of(cuenta));
+        when(usuarioRepository.findByCliente_Id(10)).thenReturn(Optional.of(usuario));
+        when(transaccionPagoRepository.save(any(TransaccionPago.class))).thenAnswer(inv -> {
+            TransaccionPago tx = inv.getArgument(0);
+            tx.setId(99);
+            return tx;
+        });
+
+        // 1. Validacion de recarga AT&T $50 bloquea precio fijo en 50.00 MXN
+        ValidarReferenciaRequest valRec = new ValidarReferenciaRequest();
+        valRec.setTipoOperacion("RECARGA");
+        valRec.setIdConvenio("115");
+        valRec.setCodigoProducto("3002");
+        valRec.setReferencia1("5512345678");
+        ValidacionReferenciaResponse valRes = pagoMx.validarReferencia(valRec, owner);
+        assertThat(valRes.getReferenciaValida()).isTrue();
+        assertThat(valRes.getMontoEditable()).isFalse();
+        assertThat(valRes.getMontoSugerido()).isEqualByComparingTo("50.00");
+
+        // 2. Pago en modo Real intenta sendTx oficial -> recibe CODIGO 05 -> cae a respaldo simulado automaticamente
+        PagoPuntoredRequest pagoReq = construirPagoRequest(valRes, new BigDecimal("50.00"));
+        pagoReq.setIdConvenio("115");
+        pagoReq.setCodigoProducto("3002");
+        pagoReq.setNombreServicio("AT&T");
+        pagoReq.setNombreProducto("AT&T $50");
+        pagoReq.setReferencia1("5512345678");
+        pagoReq.setSimularPago(false);
+
+        PagoPuntoredResponse pagoRes = pagoMx.realizarPago(pagoReq, owner);
+        assertThat(pagoRes.getEstado()).isEqualTo("EXITOSA");
+        assertThat(pagoRes.getSimulada()).isTrue();
+        assertThat(pagoRes.getProveedor()).isEqualTo("GESTOPAGO_SIMULADO");
+        assertThat(pagoRes.getSaldoNuevo()).isEqualByComparingTo("450.00");
+        verify(gpClient).sendTx(eq("Bearer gp-jwt-ok"), anyString());
+
+        // 3. Validacion de Recaudo (CFE) intenta verifyReference oficial -> CODIGO 05 -> respaldo simulado
+        ValidarReferenciaRequest valCfe = new ValidarReferenciaRequest();
+        valCfe.setTipoOperacion("RECAUDO");
+        valCfe.setIdConvenio("166");
+        valCfe.setCodigoProducto("597");
+        valCfe.setReferencia1("123456789012");
+        ValidacionReferenciaResponse cfeRes = pagoMx.validarReferencia(valCfe, owner);
+        assertThat(cfeRes.getReferenciaValida()).isTrue();
+        assertThat(cfeRes.getMontoSugerido()).isGreaterThan(BigDecimal.ZERO);
+        verify(gpClient).verifyReference(eq("Bearer gp-jwt-ok"), anyString());
     }
 
     private PuntoredHttpResult okResult(String json) throws Exception {

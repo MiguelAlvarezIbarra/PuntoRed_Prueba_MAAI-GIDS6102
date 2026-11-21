@@ -32,17 +32,25 @@ import java.util.Optional;
 public class ProductoService {
 
     private static final Integer TIPO_FRONT_DEFAULT = 0;
+    public static final String FUENTE_GESTOPAGO_OFICIAL = "GESTOPAGO_MX_OFICIAL";
+    public static final String FUENTE_GESTOPAGO_SIMULADO = "GESTOPAGO_MX_SIMULADO";
 
     private final GestoPagoServiceClient gestoPagoServiceClient;
     private final GestoPagoTokenService gestoPagoTokenService;
     private final ProductoRepository productoRepository;
     private final ProductoCacheService productoCacheService;
 
+    private volatile String saldoComercioCache;
+    private volatile long saldoComercioCacheExpiraMs = 0L;
+
     @Value("${app.cache.productos.db-ttl-seconds:86400}")
     private long dbCacheTtlSeconds = 86400L;
 
     @Value("${gestopago.productos.sync-on-startup:false}")
     private boolean syncOnStartupEnabled = true;
+
+    @Value("${gestopago.simulacion.respaldo-automatico:true}")
+    private boolean respaldoSimuladoActivo = false;
 
     public ProductoService(GestoPagoServiceClient gestoPagoServiceClient,
                            GestoPagoTokenService gestoPagoTokenService,
@@ -93,16 +101,92 @@ public class ProductoService {
     public int sincronizarProductos() {
         log.info("Iniciando invocación a GestoPago (getProductList.do)");
 
-        String xmlResponse = obtenerListaProductosXml();
-        List<ProductoGestoPagoDTO> productosGestoPago = parsearProductos(xmlResponse);
-        int total = guardarProductos(productosGestoPago);
-
-        if (total > 0) {
-            productoCacheService.invalidar();
+        List<ProductoGestoPagoDTO> productosGestoPago;
+        try {
+            String xmlResponse = obtenerListaProductosXml();
+            productosGestoPago = parsearProductos(xmlResponse);
+        } catch (RuntimeException ex) {
+            if (!respaldoSimuladoActivo) {
+                throw ex;
+            }
+            log.warn("GestoPago oficial no respondió o bloqueó la solicitud ({}); activando catálogo de respaldo simulado México.",
+                    ex.getMessage());
+            productosGestoPago = new ArrayList<>();
         }
 
-        log.info("Invocación a GestoPago finalizada. Se procesaron {} productos.", total);
-        return total;
+        if (!productosGestoPago.isEmpty()) {
+            int total = guardarProductos(productosGestoPago, FUENTE_GESTOPAGO_OFICIAL);
+            productoCacheService.invalidar();
+            log.info("Invocación a GestoPago oficial finalizada. Se procesaron {} productos.", total);
+            return total;
+        }
+
+        if (respaldoSimuladoActivo) {
+            log.warn("GestoPago oficial no devolvió nodo PRODUCTOS (posible bloqueo de IP código 05); guardando catálogo de respaldo simulado GestoPago México en PostgreSQL.");
+            List<ProductoGestoPagoDTO> fallback = GestoPagoMxCatalogoFallback.construirCatalogoMexico();
+            int totalFallback = guardarProductos(fallback, FUENTE_GESTOPAGO_SIMULADO);
+            if (totalFallback > 0) {
+                productoCacheService.invalidar();
+            }
+            log.info("Catálogo de respaldo simulado GestoPago México guardado en BD ({} productos).", totalFallback);
+            return totalFallback;
+        }
+
+        log.info("Invocación a GestoPago finalizada. Se procesaron 0 productos.");
+        return 0;
+    }
+
+    public List<Producto> obtenerOCargarCatalogoMx(boolean forzarRecarga) {
+        if (!forzarRecarga) {
+            List<Producto> existentes = obtenerTodosLosProductos();
+            if (!existentes.isEmpty()) {
+                return existentes;
+            }
+        }
+        sincronizarProductos();
+        return obtenerTodosLosProductos();
+    }
+
+    public String consultarSaldoComercioMx() {
+        return consultarSaldoComercioMx(false);
+    }
+
+    public String consultarSaldoComercioMx(boolean forzarConsulta) {
+        long ahoraMs = System.currentTimeMillis();
+        if (!forzarConsulta && saldoComercioCache != null && ahoraMs < saldoComercioCacheExpiraMs) {
+            return saldoComercioCache;
+        }
+        String resultado = null;
+        try {
+            Optional<GestoPagoToken> tokOpt = gestoPagoTokenService.obtenerTokenActual();
+            if (tokOpt.isPresent() && tokOpt.get().getToken() != null && !tokOpt.get().getToken().isBlank()) {
+                String xml = gestoPagoServiceClient.getBalance("Bearer " + tokOpt.get().getToken());
+                if (xml != null && !xml.isBlank()) {
+                    JSONObject json = XML.toJSONObject(xml);
+                    JSONObject resp = json.optJSONObject("RESPONSE");
+                    if (resp != null) {
+                        JSONObject msg = resp.optJSONObject("MENSAJE");
+                        String cod = msg != null ? String.valueOf(msg.opt("CODIGO")) : "";
+                        if ("10".equals(cod) || "01".equals(cod) || "1".equals(cod)) {
+                            Object saldo = resp.opt("SALDO");
+                            if (saldo != null && !String.valueOf(saldo).isBlank()) {
+                                resultado = String.valueOf(saldo);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.debug("No se pudo consultar saldo oficial GestoPago (getBalance.do): {}", ex.getMessage());
+        }
+        if (resultado == null && respaldoSimuladoActivo) {
+            resultado = "150000.00";
+        }
+        if (resultado != null) {
+            saldoComercioCache = resultado;
+            saldoComercioCacheExpiraMs = ahoraMs + 900_000L; // 15 min para no repetir llamadas externas
+        }
+        return resultado;
     }
 
     private boolean tieneCatalogoVigenteEnBd() {
@@ -204,7 +288,7 @@ public class ProductoService {
         return productos;
     }
 
-    private int guardarProductos(List<ProductoGestoPagoDTO> productosGestoPago) {
+    private int guardarProductos(List<ProductoGestoPagoDTO> productosGestoPago, String fuenteProveedor) {
         LocalDateTime ahora = LocalDateTime.now(ZoneId.systemDefault());
         List<Producto> nuevosProductos = new ArrayList<>();
 
@@ -224,6 +308,7 @@ public class ProductoService {
             producto.setDescripcion(dto.getDescripcion());
             producto.setLogoUrl(dto.getLogoUrl());
             producto.setCategoria(dto.getCategoria());
+            producto.setCodigoProveedor(fuenteProveedor);
             producto.setTipoOperacion(dto.getTipoOperacion());
             producto.setFechaActualizacion(ahora);
 

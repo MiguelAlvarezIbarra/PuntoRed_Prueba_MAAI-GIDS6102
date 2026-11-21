@@ -28,7 +28,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   ];
 
   List<CatalogoServicioItem> _servicios = [];
-  String _fuente = 'PUNTORED_H2H_V2';
+  String _fuente = 'GESTOPAGO_MX';
   String? _saldoComercio;
   String _moduloSeleccionado = 'TODOS';
   String _busqueda = '';
@@ -100,7 +100,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Catálogo Dinámico PuntoRed',
+                          'Catálogo GestoPago México',
                           style: Theme.of(context)
                               .textTheme
                               .titleMedium

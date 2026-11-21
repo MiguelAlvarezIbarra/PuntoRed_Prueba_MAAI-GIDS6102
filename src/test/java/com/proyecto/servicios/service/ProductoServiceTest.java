@@ -242,6 +242,35 @@ class ProductoServiceTest {
     }
 
     @Test
+    void sincronizarProductos_activaRespaldoSimuladoMexicoCuandoIpBloqueadaCodigo05() {
+        ReflectionTestUtils.setField(productoService, "respaldoSimuladoActivo", true);
+        String xmlBloqueoIp = "<?xml version='1.0' encoding='UTF-8'?>"
+                + "<RESPONSE><NUM_AUTORIZACION>-1</NUM_AUTORIZACION>"
+                + "<MENSAJE><CODIGO>05</CODIGO><TEXTO>Origen Valido</TEXTO></MENSAJE></RESPONSE>";
+
+        when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
+        when(gestoPagoServiceClient.getProductList("Bearer token-valido")).thenReturn(xmlBloqueoIp);
+        when(productoRepository.findByIdProductoAndIdServicio(any(), any())).thenReturn(Optional.empty());
+
+        int total = productoService.sincronizarProductos();
+        assertThat(total).isGreaterThanOrEqualTo(50);
+
+        verify(productoRepository).saveAll(argThat((Iterable<Producto> lista) -> {
+            boolean tieneAtt50 = false;
+            boolean tieneTelcel200 = false;
+            for (Producto p : lista) {
+                if ("AT&T $50".equals(p.getNombreProducto()) && "50.00".equals(p.getPrecio())) {
+                    tieneAtt50 = true;
+                }
+                if ("Telcel $200".equals(p.getNombreProducto()) && "200.00".equals(p.getPrecio())) {
+                    tieneTelcel200 = true;
+                }
+            }
+            return tieneAtt50 && tieneTelcel200;
+        }));
+    }
+
+    @Test
     void obtenerTodosLosProductos_retornaListaDesdeRepositorioOCache() {
         Producto p = new Producto();
         p.setIdProducto(1);
