@@ -12,5 +12,7 @@ public interface ProductoRepository extends JpaRepository<Producto, Long> {
 
     Optional<Producto> findByIdProductoAndIdServicio(Integer idProducto, Integer idServicio);
 
+    Optional<Producto> findTopByOrderByFechaActualizacionDesc();
+
     List<Producto> findAllByOrderByTipoFrontAsc();
 }

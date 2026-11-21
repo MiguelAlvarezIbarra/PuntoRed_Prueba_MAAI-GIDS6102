@@ -67,7 +67,10 @@ public class PuntoredTokenServiceImpl implements PuntoredTokenService {
         }
     }
 
-    @Scheduled(fixedRateString = "${puntored.api.token-refresh-ms:3600000}")
+    @Scheduled(
+            fixedRateString = "${puntored.api.token-refresh-ms:3600000}",
+            initialDelayString = "${puntored.api.token-refresh-ms:3600000}"
+    )
     public void renovarPeriodicamente() {
         if (!properties.tieneCredencialesConfiguradas()) {
             log.debug("Credenciales Puntored no configuradas; se omite renovacion automatica");

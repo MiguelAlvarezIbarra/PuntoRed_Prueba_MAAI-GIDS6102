@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.XML;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -37,6 +38,9 @@ public class ProductoService {
     private final ProductoRepository productoRepository;
     private final ProductoCacheService productoCacheService;
 
+    @Value("${app.cache.productos.db-ttl-seconds:86400}")
+    private long dbCacheTtlSeconds = 86400L;
+
     public ProductoService(GestoPagoServiceClient gestoPagoServiceClient,
                            GestoPagoTokenService gestoPagoTokenService,
                            ProductoRepository productoRepository,
@@ -50,8 +54,19 @@ public class ProductoService {
     @EventListener(ApplicationReadyEvent.class)
     public void syncOnStartup() {
         log.info("Iniciando sincronización de productos al arrancar la aplicación...");
+        if (tieneCatalogoVigenteEnBd()) {
+            log.info("Catálogo de productos vigente en base de datos; se omite consulta externa en el arranque.");
+            try {
+                obtenerTodosLosProductos();
+            } catch (Exception e) {
+                log.warn("No se pudo precargar caché de productos desde BD: {}", e.getMessage());
+            }
+            return;
+        }
         try {
-            gestoPagoTokenService.renovarToken();
+            if (gestoPagoTokenService.obtenerTokenActual().isEmpty()) {
+                gestoPagoTokenService.renovarToken();
+            }
             sincronizarProductos();
         } catch (Exception e) {
             log.error("Sincronización inicial de productos falló: {}", e.getMessage(), e);
@@ -75,10 +90,21 @@ public class ProductoService {
         List<ProductoGestoPagoDTO> productosGestoPago = parsearProductos(xmlResponse);
         int total = guardarProductos(productosGestoPago);
 
-        productoCacheService.invalidar();
+        if (total > 0) {
+            productoCacheService.invalidar();
+        }
 
         log.info("Invocación a GestoPago finalizada. Se procesaron {} productos.", total);
         return total;
+    }
+
+    private boolean tieneCatalogoVigenteEnBd() {
+        Optional<Producto> ultimo = productoRepository.findTopByOrderByFechaActualizacionDesc();
+        if (ultimo.isEmpty() || ultimo.get().getFechaActualizacion() == null) {
+            return false;
+        }
+        LocalDateTime limite = LocalDateTime.now(ZoneId.systemDefault()).minusSeconds(Math.max(60L, dbCacheTtlSeconds));
+        return ultimo.get().getFechaActualizacion().isAfter(limite);
     }
 
     private String obtenerListaProductosXml() {

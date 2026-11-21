@@ -27,6 +27,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -192,6 +194,25 @@ class ProductoServiceTest {
         productoService.syncOnStartup();
         productoService.syncDaily();
         verify(gestoPagoTokenService, org.mockito.Mockito.atLeastOnce()).renovarToken();
+    }
+
+    @Test
+    void syncOnStartup_omiteConsultaExternaCuandoCatalogoEstaVigenteEnBd() {
+        Producto reciente = new Producto();
+        reciente.setIdProducto(1);
+        reciente.setIdServicio(1);
+        reciente.setNombreProducto("Telcel 50");
+        reciente.setNombreServicio("Telcel");
+        reciente.setFechaActualizacion(LocalDateTime.now(ZoneId.systemDefault()).minusHours(1));
+
+        when(productoRepository.findTopByOrderByFechaActualizacionDesc()).thenReturn(Optional.of(reciente));
+        when(productoRepository.findAllByOrderByTipoFrontAsc()).thenReturn(List.of(reciente));
+
+        productoService.syncOnStartup();
+
+        verify(gestoPagoTokenService, never()).renovarToken();
+        verify(gestoPagoServiceClient, never()).getProductList(any());
+        verify(productoCacheService).guardar(List.of(reciente));
     }
 
     @Test
