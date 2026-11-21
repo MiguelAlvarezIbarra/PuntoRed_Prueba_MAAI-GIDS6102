@@ -20,7 +20,7 @@ const MODULOS = [
 export const ProductosPage: React.FC<ProductosPageProps> = ({ onSelectServicioParaPago }) => {
   const [servicios, setServicios] = useState<CatalogoServicioItem[]>([]);
   const [categorias, setCategorias] = useState<CatalogoCategoriaItem[]>([]);
-  const [fuenteDatos, setFuenteDatos] = useState<string>('PUNTORED_H2H_V2');
+  const [fuenteDatos, setFuenteDatos] = useState<string>('GESTOPAGO_MX');
   const [saldoComercio, setSaldoComercio] = useState<string | null>(null);
 
   const [tipoOperacion, setTipoOperacion] = useState<string>('TODOS');
@@ -41,13 +41,16 @@ export const ProductosPage: React.FC<ProductosPageProps> = ({ onSelectServicioPa
       const res = await api.buscarCatalogoPuntored({ forzarRecarga });
       setServicios(res.servicios || []);
       setCategorias(res.categorias || []);
-      setFuenteDatos(res.fuenteDatos || 'PUNTORED_H2H_V2');
+      setFuenteDatos(res.fuenteDatos || 'GESTOPAGO_MX');
       setSaldoComercio(res.saldoComercio || null);
       if (forzarRecarga) {
+        const esSimulado = (res.fuenteDatos || '').includes('SIMULADO');
         setAlert({
-          type: 'success',
-          title: 'Catálogo actualizado desde PuntoRed H2H V2',
-          message: `Se obtuvieron ${res.servicios?.length ?? 0} productos y convenios activos.`,
+          type: esSimulado ? 'warning' : 'success',
+          title: esSimulado
+            ? 'Catálogo sincronizado con respaldo simulado (GestoPago MX)'
+            : 'Catálogo actualizado desde GestoPago México',
+          message: `Se obtuvieron ${res.servicios?.length ?? 0} productos y servicios activos en MXN guardados en base de datos.`,
         });
       }
     } catch (err) {
@@ -153,11 +156,13 @@ export const ProductosPage: React.FC<ProductosPageProps> = ({ onSelectServicioPa
           <div>
             <h5 className="fw-bold mb-1">
               <i className="bi bi-grid-3x3-gap-fill text-primary me-2" />
-              Catálogo Dinámico de Servicios PuntoRed
+              Catálogo de Servicios México (GestoPago)
             </h5>
             <p className="text-body-secondary small mb-0">
-              Obtenido en tiempo real desde PuntoRed H2H V2 ({fuenteDatos}) ·{' '}
-              <strong>{serviciosFiltrados.length}</strong> de {servicios.length} servicios visibles
+              {fuenteDatos.includes('SIMULADO')
+                ? `Respaldo simulado automático en BD (${fuenteDatos})`
+                : `Catálogo en BD / API oficial (${fuenteDatos})`}{' '}
+              · <strong>{serviciosFiltrados.length}</strong> de {servicios.length} servicios visibles
               {saldoComercio ? (
                 <span className="ms-2 badge text-bg-light border">
                   Saldo Comercio: {formatCurrency(saldoComercio)}

@@ -149,7 +149,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return srv != null &&
         srv.precioSugerido != null &&
         srv.precioSugerido! > 0 &&
-        (srv.tipoOperacion == 'PAQUETE' || srv.tipoOperacion == 'PIN');
+        (srv.tipoOperacion == 'RECARGA' ||
+            srv.tipoOperacion == 'PAQUETE' ||
+            srv.tipoOperacion == 'PIN');
   }
 
   Future<void> _validarReferencia() async {
@@ -338,7 +340,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                   Text(
                     simulateSuccess
                         ? 'Modo simulación transparente: valida referencia, 2FA y saldo, genera ticket exitoso sin enviar cobro al proveedor real.'
-                        : 'Transacción real: se enviará directamente a PuntoRed y reflejará la respuesta real del proveedor.',
+                        : 'Intenta GestoPago oficial; si la IP está bloqueada o el proveedor falla, usa respaldo simulado automáticamente.',
                     style: Theme.of(ctx)
                         .textTheme
                         .bodySmall

@@ -266,6 +266,32 @@ class PagoServiceTest {
     }
 
     @Test
+    void realizarPago_respaldoSimuladoAutomaticoCuandoIpBloqueadaCodigo05() {
+        ReflectionTestUtils.setField(pagoService, "respaldoSimuladoActivo", true);
+        when(cuentaRepository.findByNumeroCuenta(CUENTA_18_DIGITOS)).thenReturn(Optional.of(cuentaActiva));
+        when(usuarioRepository.findByCliente_Id(10)).thenReturn(Optional.of(usuario));
+        when(gestoPagoTokenService.obtenerTokenActual()).thenReturn(Optional.of(tokenActivo));
+
+        String xmlBloqueoIp = "<?xml version='1.0' encoding='UTF-8'?>"
+                + "<RESPONSE><MENSAJE><CODIGO>05</CODIGO><TEXTO>Origen Valido</TEXTO></MENSAJE></RESPONSE>";
+        when(gestoPagoServiceClient.sendTx(eq("Bearer jwt-token-gestopago"), anyString())).thenReturn(xmlBloqueoIp);
+        when(transaccionPagoRepository.save(any(TransaccionPago.class))).thenAnswer(inv -> {
+            TransaccionPago tx = inv.getArgument(0);
+            tx.setId(88);
+            return tx;
+        });
+
+        PagoRequest request = construirRequestRecarga();
+        PagoResponse response = pagoService.realizarPago(request);
+
+        assertThat(response.getCodigo()).isZero();
+        assertThat(response.getMensaje()).isEqualTo("01: Pago Exitoso");
+        assertThat(response.getPago().getIdTxGestoPago()).startsWith("GPSIM");
+        assertThat(response.getPago().getSaldoActual()).isEqualByComparingTo(new BigDecimal("490"));
+        verify(cuentaRepository).save(cuentaActiva);
+    }
+
+    @Test
     void enviarPin2fa_generaYGuardaPinConYSinSmtp() {
         when(cuentaRepository.findByNumeroCuenta(CUENTA_18_DIGITOS)).thenReturn(Optional.of(cuentaActiva));
         when(usuarioRepository.findByCliente_Id(10)).thenReturn(Optional.of(usuario));

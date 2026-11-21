@@ -3,10 +3,13 @@ package com.proyecto.servicios.service.Impl;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.proyecto.servicios.client.GestoPagoServiceClient;
 import com.proyecto.servicios.client.PuntoredApiClient;
 import com.proyecto.servicios.client.PuntoredHttpResult;
 import com.proyecto.servicios.config.PuntoredProperties;
 import com.proyecto.servicios.config.SeguridadGuard.InfoToken;
+import com.proyecto.servicios.entity.Producto;
+import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.entity.sf.Cliente;
 import com.proyecto.servicios.entity.sf.Cuenta;
 import com.proyecto.servicios.entity.sf.TransaccionPago;
@@ -27,21 +30,30 @@ import com.proyecto.servicios.model.puntored.PagoPuntoredResponse;
 import com.proyecto.servicios.model.puntored.TicketData;
 import com.proyecto.servicios.model.puntored.ValidacionReferenciaResponse;
 import com.proyecto.servicios.model.puntored.ValidarReferenciaRequest;
+import com.proyecto.servicios.repositorys.ProductoRepository;
 import com.proyecto.servicios.repositorys.sf.CuentaRepository;
 import com.proyecto.servicios.repositorys.sf.TransaccionPagoRepository;
 import com.proyecto.servicios.repositorys.sf.UsuarioRepository;
+import com.proyecto.servicios.service.GestoPagoTokenService;
 import com.proyecto.servicios.service.PuntoredCatalogoService;
 import com.proyecto.servicios.service.PuntoredPagoService;
 import com.proyecto.servicios.service.PuntoredTokenService;
 import com.proyecto.servicios.util.CryptoUtil;
+import com.proyecto.servicios.util.GestoPagoCryptoUtil;
 import com.proyecto.servicios.util.HashUtil;
 import com.proyecto.servicios.util.Roles;
 import lombok.extern.slf4j.Slf4j;
+import org.json.JSONObject;
+import org.json.XML;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -54,6 +66,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -70,6 +83,9 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
 
     private static final String PROVEEDOR_PUNTORED = "PUNTORED";
     private static final String PROVEEDOR_SIMULADO = "PUNTORED_SIMULADO";
+    private static final String PROVEEDOR_GESTOPAGO = "GESTOPAGO";
+    private static final String PROVEEDOR_GESTOPAGO_SIMULADO = "GESTOPAGO_SIMULADO";
+    private static final String MODO_GESTOPAGO_MX = "GESTOPAGO_MX";
     private static final String ESTADO_EXITOSA = "EXITOSA";
     private static final String ESTADO_RECHAZADA = "RECHAZADA";
     private static final String ESTADO_PENDIENTE = "PENDIENTE";
@@ -90,7 +106,10 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
 
     private static final Pattern PATRON_CELULAR = Pattern.compile("^[0-9]{10}$");
     private static final Pattern PATRON_REFERENCIA_GENERAL = Pattern.compile("^[A-Za-z0-9._-]{4,50}$");
+    private static final Pattern PATRON_REFERENCIA_SERVICIO_MX = Pattern.compile("^[A-Za-z0-9._-]{8,35}$");
+    private static final Pattern PATRON_SOLO_CEROS = Pattern.compile("^[A-Za-z]{0,4}0+$");
     private static final DateTimeFormatter FORMATO_HORA = DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final DateTimeFormatter FORMATO_HORA_LOCAL_GP = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final long EXPIRACION_TOKEN_VALIDACION_SEGUNDOS = 900L;
 
     private final PuntoredTokenService tokenService;
@@ -103,6 +122,13 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
     private final HashUtil hashUtil;
     private final ObjectMapper objectMapper;
     private final PuntoredCatalogoService catalogoService;
+    private final GestoPagoServiceClient gestoPagoServiceClient;
+    private final GestoPagoTokenService gestoPagoTokenService;
+    private final GestoPagoCryptoUtil gestoPagoCryptoUtil;
+    private final ProductoRepository productoRepository;
+    private final String proveedorModo;
+    private final boolean respaldoSimuladoGestoPago;
+    private final int idDistribuidorGestoPago;
     private final SecureRandom random = new SecureRandom();
     private final AtomicInteger secuenciaTrace = new AtomicInteger(10);
 
@@ -117,16 +143,26 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
             HashUtil hashUtil,
             ObjectMapper objectMapper) {
         this(
-                tokenService,
-                apiClient,
-                properties,
-                cuentaRepository,
-                usuarioRepository,
-                transaccionPagoRepository,
-                cryptoUtil,
-                hashUtil,
-                objectMapper,
-                null
+                tokenService, apiClient, properties, cuentaRepository, usuarioRepository,
+                transaccionPagoRepository, cryptoUtil, hashUtil, objectMapper, null
+        );
+    }
+
+    public PuntoredPagoServiceImpl(
+            PuntoredTokenService tokenService,
+            PuntoredApiClient apiClient,
+            PuntoredProperties properties,
+            CuentaRepository cuentaRepository,
+            UsuarioRepository usuarioRepository,
+            TransaccionPagoRepository transaccionPagoRepository,
+            CryptoUtil cryptoUtil,
+            HashUtil hashUtil,
+            ObjectMapper objectMapper,
+            PuntoredCatalogoService catalogoService) {
+        this(
+                tokenService, apiClient, properties, cuentaRepository, usuarioRepository,
+                transaccionPagoRepository, cryptoUtil, hashUtil, objectMapper, catalogoService,
+                null, null, null, null, "PUNTORED_CO", false, 83
         );
     }
 
@@ -141,7 +177,44 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
             CryptoUtil cryptoUtil,
             HashUtil hashUtil,
             ObjectMapper objectMapper,
-            PuntoredCatalogoService catalogoService) {
+            PuntoredCatalogoService catalogoService,
+            ObjectProvider<GestoPagoServiceClient> gestoPagoServiceClientProvider,
+            ObjectProvider<GestoPagoTokenService> gestoPagoTokenServiceProvider,
+            ObjectProvider<GestoPagoCryptoUtil> gestoPagoCryptoUtilProvider,
+            ObjectProvider<ProductoRepository> productoRepositoryProvider,
+            @Value("${app.proveedor.modo:GESTOPAGO_MX}") String proveedorModo,
+            @Value("${gestopago.simulacion.respaldo-automatico:true}") boolean respaldoSimuladoGestoPago,
+            @Value("${gestopago.auth.id-distribuidor:83}") Integer idDistribuidorGestoPago) {
+        this(
+                tokenService, apiClient, properties, cuentaRepository, usuarioRepository,
+                transaccionPagoRepository, cryptoUtil, hashUtil, objectMapper, catalogoService,
+                gestoPagoServiceClientProvider != null ? gestoPagoServiceClientProvider.getIfAvailable() : null,
+                gestoPagoTokenServiceProvider != null ? gestoPagoTokenServiceProvider.getIfAvailable() : null,
+                gestoPagoCryptoUtilProvider != null ? gestoPagoCryptoUtilProvider.getIfAvailable() : null,
+                productoRepositoryProvider != null ? productoRepositoryProvider.getIfAvailable() : null,
+                proveedorModo, respaldoSimuladoGestoPago,
+                idDistribuidorGestoPago != null ? idDistribuidorGestoPago : 83
+        );
+    }
+
+    public PuntoredPagoServiceImpl(
+            PuntoredTokenService tokenService,
+            PuntoredApiClient apiClient,
+            PuntoredProperties properties,
+            CuentaRepository cuentaRepository,
+            UsuarioRepository usuarioRepository,
+            TransaccionPagoRepository transaccionPagoRepository,
+            CryptoUtil cryptoUtil,
+            HashUtil hashUtil,
+            ObjectMapper objectMapper,
+            PuntoredCatalogoService catalogoService,
+            GestoPagoServiceClient gestoPagoServiceClient,
+            GestoPagoTokenService gestoPagoTokenService,
+            GestoPagoCryptoUtil gestoPagoCryptoUtil,
+            ProductoRepository productoRepository,
+            String proveedorModo,
+            boolean respaldoSimuladoGestoPago,
+            int idDistribuidorGestoPago) {
         this.tokenService = tokenService;
         this.apiClient = apiClient;
         this.properties = properties;
@@ -152,6 +225,13 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         this.hashUtil = hashUtil;
         this.objectMapper = objectMapper;
         this.catalogoService = catalogoService;
+        this.gestoPagoServiceClient = gestoPagoServiceClient;
+        this.gestoPagoTokenService = gestoPagoTokenService;
+        this.gestoPagoCryptoUtil = gestoPagoCryptoUtil;
+        this.productoRepository = productoRepository;
+        this.proveedorModo = tieneTexto(proveedorModo) ? proveedorModo.trim().toUpperCase(Locale.ROOT) : "PUNTORED_CO";
+        this.respaldoSimuladoGestoPago = respaldoSimuladoGestoPago;
+        this.idDistribuidorGestoPago = idDistribuidorGestoPago;
     }
 
     @Override
@@ -160,6 +240,10 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         String ref1 = request.getReferencia1().trim();
         String ref2 = request.getReferencia2() != null ? request.getReferencia2().trim() : "";
         String trace = generarTraceNumerico();
+
+        if (MODO_GESTOPAGO_MX.equalsIgnoreCase(proveedorModo)) {
+            return validarReferenciaGestoPagoMx(request, infoToken, tipoOp, ref1, ref2, trace);
+        }
 
         if (OP_RECAUDO.equals(tipoOp)) {
             return validarRecaudoV1(request, infoToken, ref1, ref2, trace);
@@ -184,6 +268,10 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         String trace = tieneTexto(request.getTraceValidacion())
                 ? request.getTraceValidacion().trim()
                 : (tieneTexto(validacion.trace) ? validacion.trace : generarTraceNumerico());
+
+        if (MODO_GESTOPAGO_MX.equalsIgnoreCase(proveedorModo)) {
+            return procesarPagoGestoPagoMx(request, cuenta, tipoOp, trace);
+        }
 
         if (Boolean.TRUE.equals(request.getSimularPago())) {
             if (!properties.isPermitirSimulacion()) {
@@ -774,8 +862,550 @@ public class PuntoredPagoServiceImpl implements PuntoredPagoService {
         return ticket;
     }
 
+    private ValidacionReferenciaResponse validarReferenciaGestoPagoMx(
+            ValidarReferenciaRequest request,
+            InfoToken infoToken,
+            String tipoOp,
+            String ref1,
+            String ref2,
+            String trace) {
+        if (OP_RECAUDO.equals(tipoOp) || OP_RECAUDO_V2.equals(tipoOp)) {
+            return validarRecaudoGestoPagoMx(request, infoToken, ref1, ref2, trace);
+        }
+
+        if (!PATRON_CELULAR.matcher(ref1).matches() || PATRON_SOLO_CEROS.matcher(ref1).matches()) {
+            return construirValidacionFallida(
+                    tipoOp,
+                    request.getIdConvenio(),
+                    request.getCodigoProducto(),
+                    ref1,
+                    ref2,
+                    "02",
+                    "Por favor ingresa un numero celular valido de 10 digitos numericos en Mexico",
+                    trace
+            );
+        }
+
+        BigDecimal precioFijo = resolverPrecioProductoGestoPagoMx(
+                request.getCodigoProducto(), request.getIdConvenio(), request.getCodigoProveedor(), request.getMontoReferencia());
+        boolean editable = precioFijo == null || precioFijo.compareTo(BigDecimal.ZERO) <= 0;
+        BigDecimal min = editable ? new BigDecimal("10.00") : precioFijo;
+        BigDecimal max = editable ? new BigDecimal("10000.00") : precioFijo;
+
+        ValidacionReferenciaResponse res = new ValidacionReferenciaResponse();
+        res.setCodigo(0);
+        res.setMensaje("Referencia validada correctamente");
+        res.setReferenciaValida(true);
+        res.setTipoOperacion(tipoOp);
+        res.setIdConvenio(request.getIdConvenio());
+        res.setCodigoProducto(request.getCodigoProducto());
+        res.setReferencia1(ref1);
+        res.setReferencia2(ref2);
+        res.setCodigoRespuestaConvenio("01");
+        res.setMensajeConvenio(editable
+                ? "Linea celular Mexico validada (10 digitos)"
+                : "Linea celular Mexico validada · Precio fijo $" + precioFijo + " MXN");
+        res.setMontoSugerido(precioFijo);
+        res.setMontoMinimo(min);
+        res.setMontoMaximo(max);
+        res.setMontoEditable(editable);
+        res.setTrace(trace);
+        res.setTokenValidacion(generarTokenValidacion(
+                infoToken, tipoOp, request.getCodigoProducto(), ref1, trace, precioFijo, min, max, editable));
+        return res;
+    }
+
+    private ValidacionReferenciaResponse validarRecaudoGestoPagoMx(
+            ValidarReferenciaRequest request,
+            InfoToken infoToken,
+            String ref1,
+            String ref2,
+            String trace) {
+        if (!PATRON_REFERENCIA_SERVICIO_MX.matcher(ref1).matches() || PATRON_SOLO_CEROS.matcher(ref1).matches()) {
+            return construirValidacionFallida(
+                    OP_RECAUDO,
+                    request.getIdConvenio(),
+                    request.getCodigoProducto(),
+                    ref1,
+                    ref2,
+                    "02",
+                    "Referencia invalida: ingresa entre 8 y 35 caracteres alfanumericos validos",
+                    trace
+            );
+        }
+
+        int idProducto = parseEnteroSeguro(request.getCodigoProducto());
+        int idServicio = parseEnteroSeguro(tieneTexto(request.getIdConvenio())
+                ? request.getIdConvenio() : request.getCodigoProveedor());
+
+        // 1. Intentar validacion oficial contra GestoPago verifyReference.do
+        if (gestoPagoServiceClient != null && gestoPagoCryptoUtil != null && idProducto > 0 && idServicio > 0) {
+            try {
+                String token = obtenerTokenGestoPago();
+                if (tieneTexto(token)) {
+                    JSONObject payloadJson = new JSONObject();
+                    payloadJson.put("idProducto", idProducto);
+                    payloadJson.put("idServicio", idServicio);
+                    payloadJson.put("referencia", ref1);
+                    String signed = gestoPagoCryptoUtil.cifrarTexto(payloadJson.toString());
+                    String formBody = "random=" + URLEncoder.encode(System.currentTimeMillis() + "_rand", StandardCharsets.UTF_8)
+                            + "&signed=" + URLEncoder.encode(signed, StandardCharsets.UTF_8);
+                    String xml = gestoPagoServiceClient.verifyReference("Bearer " + token, formBody);
+                    GestoPagoXmlResultado parsed = parsearXmlGestoPago(xml);
+
+                    if ("01".equals(parsed.codigo)) {
+                        BigDecimal saldoOficial = parsed.saldo != null && parsed.saldo.compareTo(BigDecimal.ZERO) > 0
+                                ? parsed.saldo : null;
+                        boolean editable = saldoOficial == null;
+                        return construirValidacionExitosaRecaudoMx(
+                                request, infoToken, ref1, ref2, trace,
+                                "01", tieneTexto(parsed.texto) ? parsed.texto : "Referencia Valida (GestoPago oficial)",
+                                saldoOficial, editable ? new BigDecimal("20.00") : saldoOficial,
+                                editable ? new BigDecimal("10000.00") : saldoOficial, editable
+                        );
+                    }
+                    if (!esBloqueoIpOErrorTecnicoGestoPago(parsed.codigo, parsed.texto)) {
+                        return construirValidacionFallida(
+                                OP_RECAUDO, request.getIdConvenio(), request.getCodigoProducto(), ref1, ref2,
+                                parsed.codigo, tieneTexto(parsed.texto) ? parsed.texto : "Referencia invalida en GestoPago", trace
+                        );
+                    }
+                    log.warn("GestoPago oficial verifyReference.do rechazo origen/IP (codigo={}, texto={}); activando respaldo simulado.",
+                            parsed.codigo, parsed.texto);
+                }
+            } catch (Exception ex) {
+                if (!respaldoSimuladoGestoPago) {
+                    throw new ValidacionException(MensajeError.GESTOPAGO_COMUNICACION, ex.getMessage(), ex);
+                }
+                log.warn("Error consultando verifyReference.do oficial ({}); activando respaldo simulado.", ex.getMessage());
+            }
+        }
+
+        if (!respaldoSimuladoGestoPago) {
+            return construirValidacionFallida(
+                    OP_RECAUDO, request.getIdConvenio(), request.getCodigoProducto(), ref1, ref2,
+                    "05", "No se pudo validar referencia en GestoPago oficial (IP bloqueada)", trace
+            );
+        }
+
+        // 2. Respaldo simulado determinista en MXN
+        int baseCents = Math.abs(ref1.hashCode() % 650) + 250;
+        BigDecimal saldoSimulado = BigDecimal.valueOf(baseCents).setScale(2, RoundingMode.HALF_UP);
+        return construirValidacionExitosaRecaudoMx(
+                request, infoToken, ref1, ref2, trace,
+                "01",
+                "Referencia valida · Saldo estimado $" + saldoSimulado + " MXN (respaldo simulado por IP bloqueada en GestoPago oficial)",
+                saldoSimulado,
+                new BigDecimal("20.00"),
+                new BigDecimal("10000.00"),
+                true
+        );
+    }
+
+    private ValidacionReferenciaResponse construirValidacionExitosaRecaudoMx(
+            ValidarReferenciaRequest request,
+            InfoToken infoToken,
+            String ref1,
+            String ref2,
+            String trace,
+            String codigoConvenio,
+            String mensajeConvenio,
+            BigDecimal montoSugerido,
+            BigDecimal min,
+            BigDecimal max,
+            boolean editable) {
+        ValidacionReferenciaResponse res = new ValidacionReferenciaResponse();
+        res.setCodigo(0);
+        res.setMensaje("Referencia validada correctamente");
+        res.setReferenciaValida(true);
+        res.setTipoOperacion(OP_RECAUDO);
+        res.setIdConvenio(request.getIdConvenio());
+        res.setCodigoProducto(request.getCodigoProducto());
+        res.setReferencia1(ref1);
+        res.setReferencia2(ref2);
+        res.setCodigoRespuestaConvenio(codigoConvenio);
+        res.setMensajeConvenio(mensajeConvenio);
+        res.setMontoSugerido(montoSugerido);
+        res.setMontoMinimo(min);
+        res.setMontoMaximo(max);
+        res.setMontoEditable(editable);
+        res.setTrace(trace);
+        res.setTokenValidacion(generarTokenValidacion(
+                infoToken, OP_RECAUDO,
+                tieneTexto(request.getIdConvenio()) ? request.getIdConvenio() : request.getCodigoProducto(),
+                ref1, trace, montoSugerido, min, max, editable));
+        return res;
+    }
+
+    private PagoPuntoredResponse procesarPagoGestoPagoMx(
+            PagoPuntoredRequest request,
+            Cuenta cuenta,
+            String tipoOp,
+            String trace) {
+        if (Boolean.TRUE.equals(request.getSimularPago())) {
+            if (!properties.isPermitirSimulacion()) {
+                throw new ValidacionException(MensajeError.DATOS_NO_VALIDOS,
+                        "La simulación de pagos está deshabilitada en este entorno");
+            }
+            return procesarPagoSimuladoGestoPagoMx(
+                    request, cuenta, tipoOp, trace,
+                    "Simulación de pago GestoPago México aplicada exitosamente (sin cobro real en proveedor)");
+        }
+
+        // 1. Intentar pago oficial contra GestoPago sendTx.do
+        if (gestoPagoServiceClient != null && gestoPagoCryptoUtil != null) {
+            try {
+                String token = obtenerTokenGestoPago();
+                if (tieneTexto(token)) {
+                    int idProducto = parseEnteroSeguro(request.getCodigoProducto());
+                    int idServicio = parseEnteroSeguro(tieneTexto(request.getIdConvenio())
+                            ? request.getIdConvenio() : request.getCodigoProveedor());
+                    JSONObject senTx = construirPayloadSenTxGestoPagoMx(request, tipoOp, trace, idProducto, idServicio);
+                    String signed = gestoPagoCryptoUtil.cifrarTexto(senTx.toString());
+                    String formBody = "random=" + URLEncoder.encode(System.currentTimeMillis() + "_rand", StandardCharsets.UTF_8)
+                            + "&signed=" + URLEncoder.encode(signed, StandardCharsets.UTF_8);
+
+                    String xml = gestoPagoServiceClient.sendTx("Bearer " + token, formBody);
+                    GestoPagoXmlResultado parsed = parsearXmlGestoPago(xml);
+
+                    if ("01".equals(parsed.codigo)) {
+                        return registrarPagoExitosoGestoPagoOficial(request, cuenta, tipoOp, trace, signed, parsed);
+                    }
+                    if (!esBloqueoIpOErrorTecnicoGestoPago(parsed.codigo, parsed.texto)) {
+                        return registrarPagoRechazadoGestoPagoOficial(request, cuenta, tipoOp, trace, signed, parsed);
+                    }
+                    log.warn("GestoPago oficial sendTx.do devolvio codigo {} ({}); activando respaldo simulado automatico.",
+                            parsed.codigo, parsed.texto);
+                }
+            } catch (Exception ex) {
+                if (!respaldoSimuladoGestoPago) {
+                    throw new ValidacionException(MensajeError.GESTOPAGO_COMUNICACION, ex.getMessage(), ex);
+                }
+                log.warn("Fallo comunicacion con GestoPago oficial sendTx.do ({}); activando respaldo simulado automatico.",
+                        ex.getMessage());
+            }
+        }
+
+        if (!respaldoSimuladoGestoPago) {
+            throw new ValidacionException(MensajeError.GESTOPAGO_COMUNICACION,
+                    "GestoPago oficial bloqueo la IP de origen y el respaldo simulado esta deshabilitado");
+        }
+
+        return procesarPagoSimuladoGestoPagoMx(
+                request, cuenta, tipoOp, trace,
+                "Pago exitoso en respaldo simulado GestoPago México (API oficial con IP bloqueada código 05)");
+    }
+
+    private JSONObject construirPayloadSenTxGestoPagoMx(
+            PagoPuntoredRequest request,
+            String tipoOp,
+            String trace,
+            int idProducto,
+            int idServicio) {
+        JSONObject json = new JSONObject();
+        json.put("idProducto", idProducto > 0 ? idProducto : 1);
+        json.put("idServicio", idServicio > 0 ? idServicio : 1);
+        json.put("horaLocal", LocalDateTime.now(ZoneId.systemDefault()).format(FORMATO_HORA_LOCAL_GP));
+        json.put("upc", ("GP" + trace).substring(0, Math.min(15, ("GP" + trace).length())));
+        json.put("unidad", String.format("%03d", idDistribuidorGestoPago));
+
+        String ref1 = request.getReferencia1().trim();
+        if (OP_PIN.equals(tipoOp)) {
+            json.put("telefono", "#1111111111");
+            json.put("referencia", ref1);
+        } else if (OP_RECAUDO.equals(tipoOp) || OP_RECAUDO_V2.equals(tipoOp)) {
+            json.put("telefono", "1111111111");
+            json.put("referencia", ref1);
+            json.put("montoPago", limpiarMonto(request.getMonto()));
+        } else {
+            json.put("telefono", ref1);
+        }
+        return json;
+    }
+
+    private PagoPuntoredResponse registrarPagoExitosoGestoPagoOficial(
+            PagoPuntoredRequest request,
+            Cuenta cuenta,
+            String tipoOp,
+            String trace,
+            String signed,
+            GestoPagoXmlResultado parsed) {
+        BigDecimal monto = limpiarMonto(request.getMonto());
+        BigDecimal saldoAnterior = limpiarMonto(cuenta.getSaldo());
+        BigDecimal saldoNuevo = limpiarMonto(saldoAnterior.subtract(monto));
+        cuenta.setSaldo(saldoNuevo);
+        cuentaRepository.save(cuenta);
+
+        String idTx = tieneTexto(parsed.idTx) ? parsed.idTx : "GP-" + trace;
+        String auth = tieneTexto(parsed.numAutorizacion) ? parsed.numAutorizacion : trace;
+        String msg = tieneTexto(parsed.texto) ? parsed.texto : "Operacion realizada con exito";
+
+        TicketData ticket = construirTicketGestoPagoMx(request, tipoOp, trace, auth, monto, parsed.pin, parsed.legend, false);
+        TransaccionPago tx = construirEntidadTransaccion(
+                request, cuenta, tipoOp, trace, monto, idTx, auth, "01", msg, ESTADO_EXITOSA, ticket);
+        tx.setProveedor(PROVEEDOR_GESTOPAGO);
+        tx.setSenTxCifrado(signed);
+        TransaccionPago guardada = transaccionPagoRepository.save(tx);
+
+        return construirRespuestaPagoMx(
+                guardada, request, cuenta, saldoAnterior, saldoNuevo,
+                monto, idTx, auth, trace, "01", msg, ESTADO_EXITOSA, false, PROVEEDOR_GESTOPAGO, ticket);
+    }
+
+    private PagoPuntoredResponse registrarPagoRechazadoGestoPagoOficial(
+            PagoPuntoredRequest request,
+            Cuenta cuenta,
+            String tipoOp,
+            String trace,
+            String signed,
+            GestoPagoXmlResultado parsed) {
+        BigDecimal monto = limpiarMonto(request.getMonto());
+        BigDecimal saldoAnterior = limpiarMonto(cuenta.getSaldo());
+        String msg = tieneTexto(parsed.texto) ? parsed.texto : "Transaccion rechazada por GestoPago";
+        TransaccionPago tx = construirEntidadTransaccion(
+                request, cuenta, tipoOp, trace, monto, parsed.idTx, parsed.numAutorizacion,
+                parsed.codigo, msg, ESTADO_RECHAZADA, null);
+        tx.setProveedor(PROVEEDOR_GESTOPAGO);
+        tx.setSenTxCifrado(signed);
+        TransaccionPago guardada = transaccionPagoRepository.save(tx);
+
+        return construirRespuestaPagoMx(
+                guardada, request, cuenta, saldoAnterior, saldoAnterior,
+                monto, parsed.idTx, parsed.numAutorizacion, trace, parsed.codigo, msg,
+                ESTADO_RECHAZADA, false, PROVEEDOR_GESTOPAGO, null);
+    }
+
+    private PagoPuntoredResponse procesarPagoSimuladoGestoPagoMx(
+            PagoPuntoredRequest request,
+            Cuenta cuenta,
+            String tipoOp,
+            String trace,
+            String mensajeDetalle) {
+        BigDecimal monto = limpiarMonto(request.getMonto());
+        BigDecimal saldoAnterior = limpiarMonto(cuenta.getSaldo());
+        BigDecimal saldoNuevo = limpiarMonto(saldoAnterior.subtract(monto));
+        cuenta.setSaldo(saldoNuevo);
+        cuentaRepository.save(cuenta);
+
+        String authCode = String.format("AUT%06d", random.nextInt(1_000_000));
+        String idTxProveedor = "GPSIM-" + trace;
+        String pinDigital = OP_PIN.equals(tipoOp)
+                ? String.format("GP%04d-%04d-%04d", random.nextInt(10_000), random.nextInt(10_000), random.nextInt(10_000))
+                : null;
+        String legend = OP_PIN.equals(tipoOp)
+                ? "Ingresa este PIN en el portal oficial del proveedor para canjear tu tarjeta digital."
+                : null;
+
+        TicketData ticket = construirTicketGestoPagoMx(request, tipoOp, trace, authCode, monto, pinDigital, legend, true);
+        TransaccionPago tx = construirEntidadTransaccion(
+                request, cuenta, tipoOp, trace, monto, idTxProveedor, authCode,
+                "01", mensajeDetalle, ESTADO_EXITOSA, ticket);
+        tx.setProveedor(PROVEEDOR_GESTOPAGO_SIMULADO);
+        tx.setSenTxCifrado("GESTOPAGO_SIMULADO:" + trace);
+        TransaccionPago guardada = transaccionPagoRepository.save(tx);
+
+        log.info("Pago GestoPago MX simulado registrado - idTx={} cuenta={} monto={} MXN",
+                guardada.getId(), cuenta.getNumeroCuenta(), monto);
+        return construirRespuestaPagoMx(
+                guardada, request, cuenta, saldoAnterior, saldoNuevo,
+                monto, idTxProveedor, authCode, trace, "01", mensajeDetalle,
+                ESTADO_EXITOSA, true, PROVEEDOR_GESTOPAGO_SIMULADO, ticket);
+    }
+
+    private PagoPuntoredResponse construirRespuestaPagoMx(
+            TransaccionPago guardada,
+            PagoPuntoredRequest request,
+            Cuenta cuenta,
+            BigDecimal saldoAnterior,
+            BigDecimal saldoNuevo,
+            BigDecimal monto,
+            String idTxProveedor,
+            String authCode,
+            String trace,
+            String codigoProveedor,
+            String mensajeProveedor,
+            String estado,
+            boolean simulada,
+            String proveedor,
+            TicketData ticket) {
+        boolean exitosa = ESTADO_EXITOSA.equals(estado);
+        PagoPuntoredResponse response = new PagoPuntoredResponse();
+        response.setCodigo(exitosa ? 0 : MensajeError.PUNTORED_PAGO_RECHAZADO.getCodigo());
+        response.setMensaje(mensajeProveedor);
+        response.setEstado(estado);
+        response.setTransaccionConfirmada(exitosa);
+        response.setSimulada(simulada);
+        response.setProveedor(proveedor);
+        response.setIdTransaccionLocal(guardada.getId());
+        response.setIdTransaccionProveedor(idTxProveedor);
+        response.setCodigoAutorizacion(authCode);
+        response.setTrace(trace);
+        response.setCodigoRespuestaProveedor(codigoProveedor);
+        response.setMensajeProveedor(mensajeProveedor);
+        response.setNumeroCuenta(cuenta.getNumeroCuenta());
+        response.setNombreServicio(request.getNombreServicio());
+        response.setNombreProducto(request.getNombreProducto());
+        response.setCategoria(request.getCategoria());
+        response.setLogoUrl(request.getLogoUrl());
+        response.setReferencia1(request.getReferencia1().trim());
+        response.setReferencia2(request.getReferencia2());
+        response.setMonto(monto);
+        response.setSaldoAnterior(saldoAnterior);
+        response.setSaldoNuevo(saldoNuevo);
+        response.setTicket(ticket);
+        response.setFechaRegistro(guardada.getFechaRegistro());
+        return response;
+    }
+
+    private TicketData construirTicketGestoPagoMx(
+            PagoPuntoredRequest req,
+            String tipoOp,
+            String trace,
+            String authCode,
+            BigDecimal monto,
+            String pinDigital,
+            String legend,
+            boolean simulado) {
+        TicketData ticket = new TicketData();
+        ticket.setEncabezado(simulado
+                ? "GESTOPAGO / PUNTORED MÉXICO • RESPALDO SIMULADO"
+                : "GESTOPAGO / PUNTORED MÉXICO • COMPROBANTE OFICIAL");
+        ticket.setTitulo(simulado
+                ? "COMPROBANTE DE OPERACIÓN SIMULADA (MXN)"
+                : "TRANSACCIÓN EXITOSA (MXN)");
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("Operación", tipoOp);
+        cuerpo.put("Servicio", req.getNombreServicio());
+        if (tieneTexto(req.getNombreProducto())) {
+            cuerpo.put("Producto", req.getNombreProducto());
+        }
+        cuerpo.put("Referencia / Línea", req.getReferencia1().trim());
+        cuerpo.put("Importe", "$" + monto + " MXN");
+        cuerpo.put("Autorización", authCode);
+        cuerpo.put("Trace", trace);
+        if (tieneTexto(pinDigital)) {
+            cuerpo.put("PIN Digital", pinDigital);
+        }
+        if (tieneTexto(legend)) {
+            cuerpo.put("Instrucciones", legend);
+        }
+        cuerpo.put("Modalidad", simulado ? "SIMULACIÓN / RESPALDO AUTOMÁTICO" : "GESTOPAGO OFICIAL");
+        ticket.setCuerpo(cuerpo);
+        ticket.setPiePagina(simulado
+                ? "Operación ejecutada con respaldo simulado de GestoPago México tras validar referencia, saldo y 2FA."
+                : "Conserva este comprobante para cualquier aclaración ante el proveedor.");
+        ticket.setLogoUrl(req.getLogoUrl());
+        return ticket;
+    }
+
+    private BigDecimal resolverPrecioProductoGestoPagoMx(
+            String codigoProducto,
+            String idConvenio,
+            String codigoProveedor,
+            BigDecimal montoCliente) {
+        int idProd = parseEnteroSeguro(codigoProducto);
+        int idServ = parseEnteroSeguro(tieneTexto(idConvenio) ? idConvenio : codigoProveedor);
+        if (productoRepository != null && idProd > 0 && idServ > 0) {
+            Optional<Producto> prodOpt = productoRepository.findByIdProductoAndIdServicio(idProd, idServ);
+            if (prodOpt.isPresent() && tieneTexto(prodOpt.get().getPrecio())) {
+                try {
+                    BigDecimal p = new BigDecimal(prodOpt.get().getPrecio().trim().replace(",", ""));
+                    if (p.compareTo(BigDecimal.ZERO) > 0) {
+                        return p.setScale(2, RoundingMode.HALF_UP);
+                    }
+                } catch (Exception ignored) {
+                    // Continuar con fallback de catalogo
+                }
+            }
+        }
+        if (catalogoService != null && tieneTexto(codigoProducto)) {
+            BigDecimal desdeCat = resolverPrecioFijoLineaOPin(OP_RECARGA, codigoProducto, codigoProveedor, null);
+            if (desdeCat != null && desdeCat.compareTo(BigDecimal.ZERO) > 0) {
+                return desdeCat;
+            }
+            desdeCat = resolverPrecioFijoLineaOPin(OP_PAQUETE, codigoProducto, codigoProveedor, null);
+            if (desdeCat != null && desdeCat.compareTo(BigDecimal.ZERO) > 0) {
+                return desdeCat;
+            }
+            desdeCat = resolverPrecioFijoLineaOPin(OP_PIN, codigoProducto, codigoProveedor, null);
+            if (desdeCat != null && desdeCat.compareTo(BigDecimal.ZERO) > 0) {
+                return desdeCat;
+            }
+        }
+        return montoCliente != null && montoCliente.compareTo(BigDecimal.ZERO) > 0
+                ? montoCliente.setScale(2, RoundingMode.HALF_UP) : null;
+    }
+
+    private String obtenerTokenGestoPago() {
+        if (gestoPagoTokenService == null) {
+            return null;
+        }
+        Optional<GestoPagoToken> tokOpt = gestoPagoTokenService.obtenerTokenActual();
+        if (tokOpt.isEmpty()) {
+            gestoPagoTokenService.renovarToken();
+            tokOpt = gestoPagoTokenService.obtenerTokenActual();
+        }
+        return tokOpt.map(GestoPagoToken::getToken).orElse(null);
+    }
+
+    private boolean esBloqueoIpOErrorTecnicoGestoPago(String codigo, String texto) {
+        if ("05".equals(codigo) || "82".equals(codigo) || "99".equals(codigo) || !tieneTexto(codigo)) {
+            return true;
+        }
+        return texto != null && texto.toLowerCase(Locale.ROOT).contains("origen valido");
+    }
+
+    private GestoPagoXmlResultado parsearXmlGestoPago(String xml) {
+        if (!tieneTexto(xml)) {
+            return new GestoPagoXmlResultado("99", "Respuesta vacia de GestoPago", null, null, null, null, null);
+        }
+        try {
+            JSONObject json = XML.toJSONObject(xml);
+            JSONObject resp = json.optJSONObject("RESPONSE");
+            if (resp == null) {
+                return new GestoPagoXmlResultado("99", "XML sin nodo RESPONSE", null, null, null, null, null);
+            }
+            JSONObject msg = resp.optJSONObject("MENSAJE");
+            String codRaw = msg != null && msg.has("CODIGO") ? String.valueOf(msg.opt("CODIGO")).trim() : "99";
+            if (codRaw.length() == 1 && Character.isDigit(codRaw.charAt(0))) {
+                codRaw = "0" + codRaw;
+            }
+            String texto = msg != null ? msg.optString("TEXTO", "") : "";
+            String idTx = resp.has("ID_TX") ? String.valueOf(resp.opt("ID_TX")) : null;
+            String numAut = resp.has("NUM_AUTORIZACION") ? String.valueOf(resp.opt("NUM_AUTORIZACION")) : null;
+            String pin = msg != null && msg.has("PIN") ? String.valueOf(msg.opt("PIN")) : (resp.has("PIN") ? String.valueOf(resp.opt("PIN")) : null);
+            String legend = msg != null && msg.has("legend") ? String.valueOf(msg.opt("legend")) : null;
+            BigDecimal saldo = null;
+            Object saldoObj = msg != null && msg.has("SALDO") ? msg.opt("SALDO") : resp.opt("SALDO");
+            if (saldoObj != null && !String.valueOf(saldoObj).isBlank()) {
+                try {
+                    saldo = new BigDecimal(String.valueOf(saldoObj).trim().replace(",", ""));
+                } catch (Exception ignored) {
+                    saldo = null;
+                }
+            }
+            return new GestoPagoXmlResultado(codRaw, texto, idTx, numAut, pin, legend, saldo);
+        } catch (Exception ex) {
+            return new GestoPagoXmlResultado("99", "Error leyendo XML de GestoPago", null, null, null, null, null);
+        }
+    }
+
+    private record GestoPagoXmlResultado(
+            String codigo,
+            String texto,
+            String idTx,
+            String numAutorizacion,
+            String pin,
+            String legend,
+            BigDecimal saldo
+    ) {
+    }
+
     private boolean reverificarEstadoEnPuntored(TransaccionPago tx) {
-        if (PROVEEDOR_SIMULADO.equalsIgnoreCase(tx.getProveedor())) {
+        if (tx.getProveedor() != null && tx.getProveedor().toUpperCase(Locale.ROOT).contains("SIMULADO")) {
+            return false;
+        }
+        if (PROVEEDOR_GESTOPAGO.equalsIgnoreCase(tx.getProveedor())) {
             return false;
         }
         PuntoredHttpResult statusRes;

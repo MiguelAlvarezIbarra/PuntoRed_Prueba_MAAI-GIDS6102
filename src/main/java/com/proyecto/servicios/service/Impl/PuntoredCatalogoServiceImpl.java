@@ -6,6 +6,7 @@ import com.proyecto.servicios.client.PuntoredApiClient;
 import com.proyecto.servicios.client.PuntoredHttpResult;
 import com.proyecto.servicios.config.PuntoredProperties;
 import com.proyecto.servicios.entity.CatalogoPuntoredCache;
+import com.proyecto.servicios.entity.Producto;
 import com.proyecto.servicios.exception.MensajeError;
 import com.proyecto.servicios.exception.ValidacionException;
 import com.proyecto.servicios.model.puntored.CatalogoBusquedaRequest;
@@ -13,6 +14,7 @@ import com.proyecto.servicios.model.puntored.CatalogoCategoriaItem;
 import com.proyecto.servicios.model.puntored.CatalogoServicioItem;
 import com.proyecto.servicios.model.puntored.CatalogoServiciosResponse;
 import com.proyecto.servicios.repositorys.CatalogoPuntoredCacheRepository;
+import com.proyecto.servicios.service.ProductoService;
 import com.proyecto.servicios.service.PuntoredCatalogoService;
 import com.proyecto.servicios.service.PuntoredTokenService;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +49,8 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
 
     private static final String REDIS_KEY_SNAPSHOT = "puntored:catalogo:snapshot:v1";
     private static final String DB_KEY_SNAPSHOT = "PUNTORED_CATALOGO_V1";
+    private static final String MODO_GESTOPAGO_MX = "GESTOPAGO_MX";
+    private static final String GESTOPAGO_LOGO_BASE = "https://gestopago.portalventas.net/sistema/images/gestopago/servicios/";
     private static final String KEY_POS = "pointOfSale";
     private static final String KEY_DATA = "data";
     private static final String OP_RECARGA = "RECARGA";
@@ -61,6 +65,8 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
     private final CatalogoPuntoredCacheRepository catalogoCacheRepository;
+    private final ProductoService productoService;
+    private final String proveedorModo;
     private final long cacheTtlSeconds;
     private final long dbCacheTtlSeconds;
 
@@ -75,8 +81,10 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             ObjectMapper objectMapper,
             ObjectProvider<StringRedisTemplate> redisTemplateProvider,
             ObjectProvider<CatalogoPuntoredCacheRepository> catalogoCacheRepositoryProvider,
+            ObjectProvider<ProductoService> productoServiceProvider,
             @Value("${app.cache.puntored.ttl-seconds:3600}") long cacheTtlSeconds,
-            @Value("${app.cache.puntored.db-ttl-seconds:86400}") long dbCacheTtlSeconds) {
+            @Value("${app.cache.puntored.db-ttl-seconds:86400}") long dbCacheTtlSeconds,
+            @Value("${app.proveedor.modo:GESTOPAGO_MX}") String proveedorModo) {
         this(
                 tokenService,
                 apiClient,
@@ -84,8 +92,10 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
                 objectMapper,
                 redisTemplateProvider != null ? redisTemplateProvider.getIfAvailable() : null,
                 catalogoCacheRepositoryProvider != null ? catalogoCacheRepositoryProvider.getIfAvailable() : null,
+                productoServiceProvider != null ? productoServiceProvider.getIfAvailable() : null,
                 cacheTtlSeconds,
-                dbCacheTtlSeconds
+                dbCacheTtlSeconds,
+                proveedorModo
         );
     }
 
@@ -96,7 +106,7 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             ObjectMapper objectMapper,
             StringRedisTemplate redisTemplate,
             long cacheTtlSeconds) {
-        this(tokenService, apiClient, properties, objectMapper, redisTemplate, null, cacheTtlSeconds, 86400L);
+        this(tokenService, apiClient, properties, objectMapper, redisTemplate, null, null, cacheTtlSeconds, 86400L, "PUNTORED_CO");
     }
 
     public PuntoredCatalogoServiceImpl(
@@ -108,20 +118,41 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             CatalogoPuntoredCacheRepository catalogoCacheRepository,
             long cacheTtlSeconds,
             long dbCacheTtlSeconds) {
+        this(tokenService, apiClient, properties, objectMapper, redisTemplate, catalogoCacheRepository, null, cacheTtlSeconds, dbCacheTtlSeconds, "PUNTORED_CO");
+    }
+
+    public PuntoredCatalogoServiceImpl(
+            PuntoredTokenService tokenService,
+            PuntoredApiClient apiClient,
+            PuntoredProperties properties,
+            ObjectMapper objectMapper,
+            StringRedisTemplate redisTemplate,
+            CatalogoPuntoredCacheRepository catalogoCacheRepository,
+            ProductoService productoService,
+            long cacheTtlSeconds,
+            long dbCacheTtlSeconds,
+            String proveedorModo) {
         this.tokenService = tokenService;
         this.apiClient = apiClient;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
         this.catalogoCacheRepository = catalogoCacheRepository;
+        this.productoService = productoService;
         this.cacheTtlSeconds = cacheTtlSeconds > 0 ? cacheTtlSeconds : 3600L;
         this.dbCacheTtlSeconds = dbCacheTtlSeconds > 0 ? dbCacheTtlSeconds : 86400L;
+        this.proveedorModo = tieneTexto(proveedorModo) ? proveedorModo.trim().toUpperCase(Locale.ROOT) : "PUNTORED_CO";
     }
 
     @Override
     public CatalogoServiciosResponse consultarCatalogo(CatalogoBusquedaRequest request) {
         CatalogoBusquedaRequest filtro = request != null ? request : new CatalogoBusquedaRequest();
         boolean forzarRecarga = Boolean.TRUE.equals(filtro.getForzarRecarga());
+
+        if (MODO_GESTOPAGO_MX.equalsIgnoreCase(proveedorModo) && productoService != null) {
+            return consultarCatalogoGestoPagoMx(filtro, forzarRecarga);
+        }
+
         if (forzarRecarga) {
             invalidarCache();
         }
@@ -153,6 +184,101 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
         response.setCategorias(filtrarCategorias(snapshot.categorias, filtro));
         response.setServicios(filtrados);
         return response;
+    }
+
+    private CatalogoServiciosResponse consultarCatalogoGestoPagoMx(
+            CatalogoBusquedaRequest filtro,
+            boolean forzarRecarga) {
+        List<Producto> productosBd = productoService.obtenerOCargarCatalogoMx(forzarRecarga);
+        List<CatalogoServicioItem> servicios = new ArrayList<>();
+        Map<String, CatalogoCategoriaItem> catMap = new LinkedHashMap<>();
+
+        boolean tieneOficial = false;
+        for (Producto p : productosBd) {
+            if (ProductoService.FUENTE_GESTOPAGO_OFICIAL.equalsIgnoreCase(p.getCodigoProveedor())) {
+                tieneOficial = true;
+            }
+            CatalogoServicioItem item = mapearProductoGestoPagoMx(p);
+            servicios.add(item);
+
+            String catKey = item.getTipoOperacion() + "-" + item.getNombreServicio();
+            CatalogoCategoriaItem cat = catMap.computeIfAbsent(
+                    catKey,
+                    k -> new CatalogoCategoriaItem(
+                            item.getIdConvenio(),
+                            item.getNombreServicio(),
+                            item.getTipoOperacion(),
+                            item.getLogoUrl(),
+                            item.getCategoria(),
+                            0
+                    )
+            );
+            cat.setTotalElementos(cat.getTotalElementos() + 1);
+        }
+
+        List<CatalogoCategoriaItem> categorias = new ArrayList<>(catMap.values());
+        List<CatalogoServicioItem> filtrados = filtrarServicios(servicios, filtro);
+
+        CatalogoServiciosResponse response = new CatalogoServiciosResponse();
+        response.setCodigo(0);
+        response.setMensaje(tieneOficial
+                ? "Catalogo oficial GestoPago Mexico consultado exitosamente"
+                : "Catalogo GestoPago Mexico (respaldo simulado persistido en BD por bloqueo IP oficial)");
+        response.setFuenteDatos(tieneOficial ? ProductoService.FUENTE_GESTOPAGO_OFICIAL : ProductoService.FUENTE_GESTOPAGO_SIMULADO);
+        response.setSaldoComercio(productoService.consultarSaldoComercioMx());
+        response.setCategorias(filtrarCategorias(categorias, filtro));
+        response.setServicios(filtrados);
+        return response;
+    }
+
+    private CatalogoServicioItem mapearProductoGestoPagoMx(Producto p) {
+        String tipoOp = tieneTexto(p.getTipoOperacion())
+                ? p.getTipoOperacion().trim().toUpperCase(Locale.ROOT)
+                : (Integer.valueOf(1).equals(p.getTipoFront()) ? OP_RECARGA : OP_RECAUDO);
+        String idServStr = p.getIdServicio() != null ? String.valueOf(p.getIdServicio()) : "0";
+        String idProdStr = p.getIdProducto() != null ? String.valueOf(p.getIdProducto()) : "0";
+        String logo = tieneTexto(p.getLogoUrl())
+                ? p.getLogoUrl()
+                : (p.getIdServicio() != null && p.getIdServicio() > 0 ? GESTOPAGO_LOGO_BASE + p.getIdServicio() + ".png" : null);
+
+        BigDecimal precio = parsearPrecioTexto(p.getPrecio());
+        if (precio != null && precio.compareTo(BigDecimal.ZERO) <= 0) {
+            precio = null;
+        }
+
+        CatalogoServicioItem item = new CatalogoServicioItem();
+        item.setClaveUnica("GP-" + idServStr + "-" + idProdStr);
+        item.setTipoOperacion(tipoOp);
+        item.setCategoria(tieneTexto(p.getCategoria()) ? p.getCategoria() : "Servicios Mexico");
+        item.setNombreServicio(p.getNombreServicio());
+        item.setNombreProducto(p.getNombreProducto());
+        item.setDescripcion(tieneTexto(p.getDescripcion())
+                ? p.getDescripcion()
+                : p.getNombreProducto() + " (" + p.getNombreServicio() + ")");
+        item.setProveedorCodigo(idServStr);
+        item.setProveedorNombre(p.getNombreServicio());
+        item.setLogoUrl(logo);
+        item.setCodigoProducto(idProdStr);
+        item.setIdConvenio(idServStr);
+        item.setCodigoCategoria(p.getIdCatTipoServicio() != null ? String.valueOf(p.getIdCatTipoServicio()) : null);
+        item.setPrecioSugerido(precio);
+        item.setTipoRecaudo(p.getTipoFront());
+        item.setRequiereValidacionReferencia(true);
+        item.setEtiquetaReferencia1(OP_RECAUDO.equals(tipoOp)
+                ? "Numero de cuenta, servicio o referencia"
+                : "Numero de celular Mexico (10 digitos)");
+        return item;
+    }
+
+    private BigDecimal parsearPrecioTexto(String raw) {
+        if (!tieneTexto(raw)) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw.trim().replace(",", ""));
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private CatalogoSnapshot obtenerSnapshotBase(boolean forzarRecarga) {

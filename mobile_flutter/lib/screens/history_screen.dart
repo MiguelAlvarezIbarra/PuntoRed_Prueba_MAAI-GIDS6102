@@ -350,7 +350,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                         ),
                                         const SizedBox(height: 4),
                                         StatusBadge(estado: item.estado),
-                                        if (item.proveedor.toUpperCase() == 'PUNTORED_SIMULADO') ...[
+                                        if (item.proveedor.toUpperCase().contains('SIMULADO')) ...[
                                           const SizedBox(height: 4),
                                           Text(
                                             'Simulación',
