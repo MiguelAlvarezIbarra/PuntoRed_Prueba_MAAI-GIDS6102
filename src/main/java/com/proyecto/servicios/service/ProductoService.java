@@ -39,6 +39,7 @@ public class ProductoService {
     private final GestoPagoTokenService gestoPagoTokenService;
     private final ProductoRepository productoRepository;
     private final ProductoCacheService productoCacheService;
+    private final Object syncLock = new Object();
 
     private volatile String saldoComercioCache;
     private volatile long saldoComercioCacheExpiraMs = 0L;
@@ -99,41 +100,43 @@ public class ProductoService {
     }
 
     public int sincronizarProductos() {
-        log.info("Iniciando invocación a GestoPago (getProductList.do)");
+        synchronized (syncLock) {
+            log.info("Iniciando invocación a GestoPago (getProductList.do)");
 
-        List<ProductoGestoPagoDTO> productosGestoPago;
-        try {
-            String xmlResponse = obtenerListaProductosXml();
-            productosGestoPago = parsearProductos(xmlResponse);
-        } catch (RuntimeException ex) {
-            if (!respaldoSimuladoActivo) {
-                throw ex;
+            List<ProductoGestoPagoDTO> productosGestoPago;
+            try {
+                String xmlResponse = obtenerListaProductosXml();
+                productosGestoPago = parsearProductos(xmlResponse);
+            } catch (RuntimeException ex) {
+                if (!respaldoSimuladoActivo) {
+                    throw ex;
+                }
+                log.warn("GestoPago oficial no respondió o bloqueó la solicitud ({}); activando catálogo de respaldo simulado México.",
+                        ex.getMessage());
+                productosGestoPago = new ArrayList<>();
             }
-            log.warn("GestoPago oficial no respondió o bloqueó la solicitud ({}); activando catálogo de respaldo simulado México.",
-                    ex.getMessage());
-            productosGestoPago = new ArrayList<>();
-        }
 
-        if (!productosGestoPago.isEmpty()) {
-            int total = guardarProductos(productosGestoPago, FUENTE_GESTOPAGO_OFICIAL);
-            productoCacheService.invalidar();
-            log.info("Invocación a GestoPago oficial finalizada. Se procesaron {} productos.", total);
-            return total;
-        }
-
-        if (respaldoSimuladoActivo) {
-            log.warn("GestoPago oficial no devolvió nodo PRODUCTOS (posible bloqueo de IP código 05); guardando catálogo de respaldo simulado GestoPago México en PostgreSQL.");
-            List<ProductoGestoPagoDTO> fallback = GestoPagoMxCatalogoFallback.construirCatalogoMexico();
-            int totalFallback = guardarProductos(fallback, FUENTE_GESTOPAGO_SIMULADO);
-            if (totalFallback > 0) {
+            if (!productosGestoPago.isEmpty()) {
+                int total = guardarProductos(productosGestoPago, FUENTE_GESTOPAGO_OFICIAL);
                 productoCacheService.invalidar();
+                log.info("Invocación a GestoPago oficial finalizada. Se procesaron {} productos.", total);
+                return total;
             }
-            log.info("Catálogo de respaldo simulado GestoPago México guardado en BD ({} productos).", totalFallback);
-            return totalFallback;
-        }
 
-        log.info("Invocación a GestoPago finalizada. Se procesaron 0 productos.");
-        return 0;
+            if (respaldoSimuladoActivo) {
+                log.warn("GestoPago oficial no devolvió nodo PRODUCTOS (posible bloqueo de IP código 05); guardando catálogo de respaldo simulado GestoPago México en PostgreSQL.");
+                List<ProductoGestoPagoDTO> fallback = GestoPagoMxCatalogoFallback.construirCatalogoMexico();
+                int totalFallback = guardarProductos(fallback, FUENTE_GESTOPAGO_SIMULADO);
+                if (totalFallback > 0) {
+                    productoCacheService.invalidar();
+                }
+                log.info("Catálogo de respaldo simulado GestoPago México guardado en BD ({} productos).", totalFallback);
+                return totalFallback;
+            }
+
+            log.info("Invocación a GestoPago finalizada. Se procesaron 0 productos.");
+            return 0;
+        }
     }
 
     public List<Producto> obtenerOCargarCatalogoMx(boolean forzarRecarga) {
@@ -143,8 +146,16 @@ public class ProductoService {
                 return existentes;
             }
         }
-        sincronizarProductos();
-        return obtenerTodosLosProductos();
+        synchronized (syncLock) {
+            if (!forzarRecarga) {
+                List<Producto> existentes = obtenerTodosLosProductos();
+                if (!existentes.isEmpty()) {
+                    return existentes;
+                }
+            }
+            sincronizarProductos();
+            return obtenerTodosLosProductos();
+        }
     }
 
     public String consultarSaldoComercioMx() {
@@ -294,7 +305,7 @@ public class ProductoService {
 
         for (ProductoGestoPagoDTO dto : productosGestoPago) {
             Producto producto = productoRepository
-                    .findByIdProductoAndIdServicio(dto.getIdProducto(), dto.getIdServicio())
+                    .findFirstByIdProductoAndIdServicioOrderByFechaActualizacionDesc(dto.getIdProducto(), dto.getIdServicio())
                     .orElseGet(Producto::new);
 
             producto.setIdProducto(dto.getIdProducto());

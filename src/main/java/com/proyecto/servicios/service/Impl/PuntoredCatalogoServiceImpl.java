@@ -190,7 +190,7 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             CatalogoBusquedaRequest filtro,
             boolean forzarRecarga) {
         List<Producto> productosBd = productoService.obtenerOCargarCatalogoMx(forzarRecarga);
-        List<CatalogoServicioItem> servicios = new ArrayList<>();
+        Map<String, CatalogoServicioItem> serviciosUnicos = new LinkedHashMap<>();
         Map<String, CatalogoCategoriaItem> catMap = new LinkedHashMap<>();
 
         boolean tieneOficial = false;
@@ -199,7 +199,9 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
                 tieneOficial = true;
             }
             CatalogoServicioItem item = mapearProductoGestoPagoMx(p);
-            servicios.add(item);
+            if (serviciosUnicos.putIfAbsent(item.getClaveUnica(), item) != null) {
+                continue;
+            }
 
             String catKey = item.getTipoOperacion() + "-" + item.getNombreServicio();
             CatalogoCategoriaItem cat = catMap.computeIfAbsent(
@@ -215,6 +217,8 @@ public class PuntoredCatalogoServiceImpl implements PuntoredCatalogoService {
             );
             cat.setTotalElementos(cat.getTotalElementos() + 1);
         }
+
+        List<CatalogoServicioItem> servicios = new ArrayList<>(serviciosUnicos.values());
 
         List<CatalogoCategoriaItem> categorias = new ArrayList<>(catMap.values());
         List<CatalogoServicioItem> filtrados = filtrarServicios(servicios, filtro);
